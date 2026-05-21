@@ -1,14 +1,17 @@
-import express, { Application, Router } from 'express';
+import express, { Router } from 'express';
 import { router as userRoutes } from './routes/user.routes';
 import { authRoutes } from './routes/auth.routes';
+import { chatRoutes } from './routes/chat.routes';
 import passport from './auth/passport';
 import cookieParser from 'cookie-parser';
 
-const app: Application = express();
+const app = express();
+app.disable('x-powered-by');
 
 const apiV1 = Router();
 apiV1.use('/users', userRoutes);
 apiV1.use('/auth', authRoutes);
+apiV1.use('/chat', chatRoutes);
 
 app.use(express.json());
 app.use(cookieParser());

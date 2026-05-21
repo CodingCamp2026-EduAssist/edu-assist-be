@@ -20,4 +20,5 @@ export const env = {
   jwtAccessExpiresIn: '15m',
   jwtRefreshExpiresIn: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
   clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
+  inferenceApiUrl: process.env.INFERENCE_API_URL || 'http://localhost:8000',
 } as const;
