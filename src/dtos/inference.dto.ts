@@ -2,29 +2,49 @@ import { z } from 'zod';
 import { Citation, TokenUsage, Turn } from '../types';
 import { StudentProfileSchema } from '../models/studentProfiles';
 
-export const InferenceRequestDto = z.object({
-  userMessage: z.object({
-    content: z.string(),
-    attachmentIds: z.array(z.string()).optional(),
-  }),
-  conversationId: z.string(),
-  recentTurns: z.array(Turn).optional(),
-  conversationSummary: z.string().optional(),
-  locale: z.string().optional(),
-  studentProfile: StudentProfileSchema.optional(),
-  guestContext: z
-    .object({
-      sessionId: z.string(),
-      temporaryProfile: StudentProfileSchema.partial(),
-    })
-    .optional(),
-  linkedDocumentIds: z.array(z.string()).optional(),
-  stream: z.boolean().default(false),
-  maxTokens: z.number().optional(),
-});
+const localePattern = /^[a-z]{2}(?:-[A-Z]{2})?$/;
 
-export const InferenceResponseDto = z.object({
-  content: z.string(),
-  citations: Citation.array().optional(),
-  tokenUsage: TokenUsage,
-});
+export const InferenceRequestDto = z
+  .object({
+    userMessage: z
+      .object({
+        content: z.string().trim().min(1).max(8000),
+        attachmentIds: z
+          .array(z.uuid())
+          .max(20)
+          .optional()
+          .transform((value) => (value ? [...new Set(value)] : undefined)),
+      })
+      .strict(),
+    conversationId: z.uuid(),
+    recentTurns: z.array(Turn).max(50).optional(),
+    conversationSummary: z.string().trim().max(8000).optional(),
+    locale: z.string().trim().regex(localePattern).optional(),
+    studentProfile: StudentProfileSchema.partial().strict().optional(),
+    guestContext: z
+      .object({
+        sessionId: z.uuid(),
+        temporaryProfile: StudentProfileSchema.partial().strict(),
+      })
+      .strict()
+      .optional(),
+    linkedDocumentIds: z
+      .array(z.uuid())
+      .max(20)
+      .optional()
+      .transform((value) => (value ? [...new Set(value)] : undefined)),
+    stream: z.boolean().default(false),
+    maxTokens: z.coerce.number().int().positive().max(8192).optional(),
+  })
+  .strict();
+
+export const InferenceResponseDto = z
+  .object({
+    content: z.string().min(1).max(8000),
+    citations: Citation.array().optional(),
+    tokenUsage: TokenUsage,
+  })
+  .strict();
+
+export type InferenceRequest = z.infer<typeof InferenceRequestDto>;
+export type InferenceResponse = z.infer<typeof InferenceResponseDto>;

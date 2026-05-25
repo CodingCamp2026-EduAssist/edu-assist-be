@@ -8,24 +8,34 @@ import {
   resumeChatSession,
   sendChatMessage,
 } from '../services/chat.service';
+import { AppError } from '../errors/app-error';
+import { parseSchema } from '../utils/validation';
 
-const ListChatSessionsQueryDto = z.object({
-  guestSessionId: z.string().optional(),
-  limit: z.coerce.number().int().positive().max(100).default(20),
-});
+const ListChatSessionsQueryDto = z
+  .object({
+    guestSessionId: z.uuid().trim().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .strict();
 
-const ResumeChatSessionQueryDto = z.object({
-  guestSessionId: z.string().optional(),
-  limit: z.coerce.number().int().positive().max(100).default(20),
-});
+const ResumeChatSessionQueryDto = z
+  .object({
+    guestSessionId: z.uuid().trim().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .strict();
 
-const SendChatMessageQueryDto = z.object({
-  guestSessionId: z.string().optional(),
-});
+const SendChatMessageQueryDto = z
+  .object({
+    guestSessionId: z.uuid().trim().optional(),
+  })
+  .strict();
 
-const ChatSessionParamsDto = z.object({
-  sessionId: z.string(),
-});
+const ChatSessionParamsDto = z
+  .object({
+    sessionId: z.uuid().trim(),
+  })
+  .strict();
 
 function toActor(req: Request, guestSessionId?: string) {
   return {
@@ -34,21 +44,34 @@ function toActor(req: Request, guestSessionId?: string) {
   };
 }
 
-export async function createSession(req: Request, res: Response): Promise<void> {
-  const result = CreateConversationRequestDto.safeParse(req.body);
+function requireActor(req: Request, guestSessionId?: string) {
+  const actor = toActor(req, guestSessionId);
 
-  if (!result.success) {
-    res.status(400).json({ error: 'Invalid chat session payload', issues: result.error.issues });
-    return;
+  if (!actor.userId && !actor.guestSessionId) {
+    throw new AppError(
+      400,
+      'guestSessionId is required for guest sessions',
+      'GUEST_SESSION_REQUIRED',
+    );
   }
+
+  return actor;
+}
+
+export async function createSession(req: Request, res: Response): Promise<void> {
+  const payload = parseSchema(
+    CreateConversationRequestDto,
+    req.body,
+    'Invalid chat session payload',
+  );
 
   const session = await createChatSession({
     userId: req.user?.id,
-    guestSessionId: result.data.guestSessionId,
-    title: result.data.title,
-    initialContext: result.data.initialContext,
-    linkedDocumentIds: result.data.linkedDocumentIds,
-    studentProfile: result.data.studentProfile,
+    guestSessionId: payload.guestSessionId,
+    title: payload.title,
+    initialContext: payload.initialContext,
+    linkedDocumentIds: payload.linkedDocumentIds,
+    studentProfile: payload.studentProfile,
   });
 
   res.status(201).json({
@@ -62,48 +85,22 @@ export async function createSession(req: Request, res: Response): Promise<void> 
 }
 
 export async function listSessions(req: Request, res: Response): Promise<void> {
-  const result = ListChatSessionsQueryDto.safeParse(req.query);
+  const query = parseSchema(ListChatSessionsQueryDto, req.query, 'Invalid chat session query');
+  const actor = requireActor(req, query.guestSessionId);
 
-  if (!result.success) {
-    res.status(400).json({ error: 'Invalid chat session query', issues: result.error.issues });
-    return;
-  }
-
-  const actor = toActor(req, result.data.guestSessionId);
-
-  if (!actor.userId && !actor.guestSessionId) {
-    res.status(400).json({ error: 'guestSessionId is required for guest sessions' });
-    return;
-  }
-
-  const sessions = await listChatSessions(actor, result.data.limit);
+  const sessions = await listChatSessions(actor, query.limit);
   res.json({ sessions });
 }
 
 export async function resumeSession(req: Request, res: Response): Promise<void> {
-  const result = ResumeChatSessionQueryDto.safeParse(req.query);
-  const paramsResult = ChatSessionParamsDto.safeParse(req.params);
+  const query = parseSchema(ResumeChatSessionQueryDto, req.query, 'Invalid chat session query');
+  const params = parseSchema(ChatSessionParamsDto, req.params, 'Invalid chat session params');
+  const actor = requireActor(req, query.guestSessionId);
 
-  if (!result.success || !paramsResult.success) {
-    res.status(400).json({
-      error: 'Invalid chat session query',
-      issues: result.error?.issues ?? paramsResult.error?.issues ?? [],
-    });
-    return;
-  }
-
-  const actor = toActor(req, result.data.guestSessionId);
-
-  if (!actor.userId && !actor.guestSessionId) {
-    res.status(400).json({ error: 'guestSessionId is required for guest sessions' });
-    return;
-  }
-
-  const session = await resumeChatSession(actor, paramsResult.data.sessionId, result.data.limit);
+  const session = await resumeChatSession(actor, params.sessionId, query.limit);
 
   if (!session) {
-    res.status(404).json({ error: 'Chat session not found' });
-    return;
+    throw new AppError(404, 'Chat session not found', 'CHAT_SESSION_NOT_FOUND');
   }
 
   res.json({
@@ -120,29 +117,14 @@ export async function resumeSession(req: Request, res: Response): Promise<void> 
 }
 
 export async function listHistory(req: Request, res: Response): Promise<void> {
-  const result = ResumeChatSessionQueryDto.safeParse(req.query);
-  const paramsResult = ChatSessionParamsDto.safeParse(req.params);
+  const query = parseSchema(ResumeChatSessionQueryDto, req.query, 'Invalid chat session query');
+  const params = parseSchema(ChatSessionParamsDto, req.params, 'Invalid chat session params');
+  const actor = requireActor(req, query.guestSessionId);
 
-  if (!result.success || !paramsResult.success) {
-    res.status(400).json({
-      error: 'Invalid chat session query',
-      issues: result.error?.issues ?? paramsResult.error?.issues ?? [],
-    });
-    return;
-  }
-
-  const actor = toActor(req, result.data.guestSessionId);
-
-  if (!actor.userId && !actor.guestSessionId) {
-    res.status(400).json({ error: 'guestSessionId is required for guest sessions' });
-    return;
-  }
-
-  const session = await resumeChatSession(actor, paramsResult.data.sessionId, result.data.limit);
+  const session = await resumeChatSession(actor, params.sessionId, query.limit);
 
   if (!session) {
-    res.status(404).json({ error: 'Chat session not found' });
-    return;
+    throw new AppError(404, 'Chat session not found', 'CHAT_SESSION_NOT_FOUND');
   }
 
   res.json({
@@ -152,48 +134,29 @@ export async function listHistory(req: Request, res: Response): Promise<void> {
 }
 
 export async function sendMessage(req: Request, res: Response): Promise<void> {
-  const queryResult = SendChatMessageQueryDto.safeParse(req.query);
-  const bodyResult = PostMessageRequestDto.safeParse(req.body);
-  const paramsResult = ChatSessionParamsDto.safeParse(req.params);
+  const query = parseSchema(SendChatMessageQueryDto, req.query, 'Invalid chat session query');
+  const body = parseSchema(PostMessageRequestDto, req.body, 'Invalid chat message payload');
+  const params = parseSchema(ChatSessionParamsDto, req.params, 'Invalid chat session params');
+  const actor = requireActor(req, query.guestSessionId);
 
-  if (!queryResult.success || !paramsResult.success) {
-    res.status(400).json({
-      error: 'Invalid chat session query',
-      issues: queryResult.error?.issues ?? paramsResult.error?.issues ?? [],
-    });
-    return;
-  }
-
-  if (!bodyResult.success) {
-    res
-      .status(400)
-      .json({ error: 'Invalid chat message payload', issues: bodyResult.error.issues });
-    return;
-  }
-
-  if (bodyResult.data.stream) {
-    res.status(501).json({ error: 'Streaming message responses are not implemented yet' });
-    return;
-  }
-
-  const actor = toActor(req, queryResult.data.guestSessionId);
-
-  if (!actor.userId && !actor.guestSessionId) {
-    res.status(400).json({ error: 'guestSessionId is required for guest sessions' });
-    return;
+  if (body.stream) {
+    throw new AppError(
+      501,
+      'Streaming message responses are not implemented yet',
+      'STREAMING_NOT_IMPLEMENTED',
+    );
   }
 
   const result = await sendChatMessage(actor, {
-    sessionId: paramsResult.data.sessionId,
-    content: bodyResult.data.content,
-    attachmentIds: bodyResult.data.attachmentIds,
-    locale: bodyResult.data.locale,
-    stream: bodyResult.data.stream,
+    sessionId: params.sessionId,
+    content: body.content,
+    attachmentIds: body.attachmentIds,
+    locale: body.locale,
+    stream: body.stream,
   });
 
   if (!result) {
-    res.status(404).json({ error: 'Chat session not found' });
-    return;
+    throw new AppError(404, 'Chat session not found', 'CHAT_SESSION_NOT_FOUND');
   }
 
   res.status(201).json(result);

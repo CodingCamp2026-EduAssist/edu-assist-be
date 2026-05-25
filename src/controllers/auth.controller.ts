@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { AppError } from '../errors/app-error';
 import passport from '../auth/passport';
 import {
   generateAccessToken,
@@ -11,7 +12,7 @@ import { env } from '../config/env';
 const REFRESH_COOKIE = 'refresh_token';
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
+  secure: env.nodeEnv === 'production',
   sameSite: 'lax' as const,
   path: '/api/v1/auth',
   maxAge: env.jwtRefreshExpiresIn,
@@ -25,7 +26,10 @@ export const googleLogin = passport.authenticate('google', {
 export const googleCallback = [
   passport.authenticate('google', { session: false, failureRedirect: '/api/v1/auth/failure' }),
   async (req: Request, res: Response) => {
-    const user = req.user!;
+    const user = req.user;
+    if (!user) {
+      throw new AppError(401, 'Google authentication failed', 'GOOGLE_AUTH_FAILED');
+    }
 
     const accessToken = generateAccessToken(user);
     const { refreshToken } = await createSession(user.id, {
@@ -33,17 +37,17 @@ export const googleCallback = [
       userAgent: req.headers['user-agent'],
     });
 
+    res.setHeader('Cache-Control', 'no-store');
     res.cookie(REFRESH_COOKIE, refreshToken, COOKIE_OPTIONS);
 
-    res.redirect(`${env.clientUrl}/auth/callback?token=${accessToken}`);
+    res.redirect(`${env.clientUrl}/auth/callback?token=${encodeURIComponent(accessToken)}`);
   },
 ];
 
 export async function refresh(req: Request, res: Response) {
   const oldToken = req.cookies?.[REFRESH_COOKIE];
   if (!oldToken) {
-    res.status(401).json({ error: 'No refresh token provided' });
-    return;
+    throw new AppError(401, 'No refresh token provided', 'REFRESH_TOKEN_MISSING');
   }
 
   const result = await rotateSession(oldToken, {
@@ -53,12 +57,12 @@ export async function refresh(req: Request, res: Response) {
 
   if (!result) {
     res.clearCookie(REFRESH_COOKIE, { path: '/api/v1/auth' });
-    res.status(401).json({ error: 'Invalid or expired refresh token' });
-    return;
+    throw new AppError(401, 'Invalid or expired refresh token', 'REFRESH_TOKEN_INVALID');
   }
 
   const accessToken = generateAccessToken(result.user);
 
+  res.setHeader('Cache-Control', 'no-store');
   res.cookie(REFRESH_COOKIE, result.refreshToken, COOKIE_OPTIONS);
   res.json({ accessToken });
 }
@@ -70,6 +74,7 @@ export async function logout(req: Request, res: Response) {
   }
 
   res.clearCookie(REFRESH_COOKIE, { path: '/api/v1/auth' });
+  res.setHeader('Cache-Control', 'no-store');
   res.json({ message: 'Logged out successfully' });
 }
 

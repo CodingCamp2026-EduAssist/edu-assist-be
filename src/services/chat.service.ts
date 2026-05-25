@@ -1,21 +1,15 @@
 import { desc, eq, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import { InferenceRequestDto } from '../dtos/inference.dto';
 import { db } from '../db/db';
-import {
-  chatMessages,
-  chatSessions,
-  type ChatGuestContext,
-  type ChatMessage,
-  type ChatSession,
-} from '../models/chat';
 import {
   studentProfiles,
   type StudentProfileInput,
   StudentProfileSchema,
 } from '../models/studentProfiles';
-import { callInference } from './inference.service';
+import { callInference, type InferenceRequest } from './inference.service';
 import type { ClientMessage, TokenUsage, Turn } from '../types';
+import { ChatSession, chatSessions, GuestContext } from '../models/chatSessions';
+import { ChatMessage, chatMessages } from '../models/chatMessages';
 
 export type ChatActor = {
   userId?: string;
@@ -112,8 +106,8 @@ function toTurn(message: ChatMessage): Turn {
   };
 }
 
-function toGuestContext(input: CreateChatSessionInput): ChatGuestContext {
-  const context: ChatGuestContext = {};
+function toGuestContext(input: CreateChatSessionInput): GuestContext {
+  const context: GuestContext = {};
 
   if (input.initialContext) {
     context.initialContext = input.initialContext;
@@ -334,7 +328,7 @@ export async function sendChatMessage(
   const studentProfile = session.userId
     ? await getStudentProfileForUser(session.userId)
     : undefined;
-  const inferencePayload = InferenceRequestDto.parse({
+  const inferencePayload: InferenceRequest = {
     userMessage: {
       content: input.content,
       attachmentIds: input.attachmentIds,
@@ -353,7 +347,7 @@ export async function sendChatMessage(
       : undefined,
     linkedDocumentIds: session.guestContext?.linkedDocumentIds,
     stream: input.stream ?? false,
-  });
+  };
 
   const inferenceResponse = await callInference(inferencePayload);
 

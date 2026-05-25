@@ -8,7 +8,7 @@ export const sessions = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    refreshToken: varchar('refresh_token', { length: 255 }).notNull().unique(),
+    refreshTokenHash: varchar('refresh_token_hash', { length: 64 }).notNull().unique(),
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
     ipAddress: varchar('ip_address', { length: 45 }),
     userAgent: text('user_agent'),
@@ -16,7 +16,7 @@ export const sessions = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   },
   (table) => ({
-    refreshTokenIdx: index('sessions_refresh_token_idx').on(table.refreshToken),
+    refreshTokenHashIdx: index('sessions_refresh_token_hash_idx').on(table.refreshTokenHash),
     userIdIdx: index('sessions_user_id_idx').on(table.userId),
   }),
 );
