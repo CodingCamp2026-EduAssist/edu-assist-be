@@ -6,6 +6,11 @@ import { users } from '../models/users';
 import { sessions } from '../models/sessions';
 import { env } from '../config/env';
 import type { JwtPayload } from '../types';
+import { createHmac } from 'crypto';
+
+function hashRefreshToken(token: string): string {
+  return createHmac('sha256', env.refreshTokenSecret).update(token).digest('hex');
+}
 
 export async function findOrCreateUserByGoogle(profile: {
   id: string;
@@ -40,16 +45,20 @@ export function generateAccessToken(user: { id: string; email: string; name: str
     email: user.email,
     name: user.name,
   };
-  return jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtAccessExpiresIn });
+
+  return jwt.sign(payload, env.jwtSecret, {
+    expiresIn: env.jwtAccessExpiresIn as jwt.SignOptions['expiresIn'],
+  });
 }
 
 export async function createSession(userId: string, meta: { ip?: string; userAgent?: string }) {
   const refreshToken = uuidv4();
+  const refreshTokenHash = hashRefreshToken(refreshToken);
   const expiresAt = new Date(Date.now() + env.jwtRefreshExpiresIn);
 
   await db.insert(sessions).values({
     userId,
-    refreshToken,
+    refreshTokenHash,
     expiresAt,
     ipAddress: meta.ip ?? null,
     userAgent: meta.userAgent ?? null,
@@ -62,10 +71,12 @@ export async function rotateSession(
   oldRefreshToken: string,
   meta: { ip?: string; userAgent?: string },
 ) {
+  const oldRefreshTokenHash = hashRefreshToken(oldRefreshToken);
+
   const [session] = await db
     .select()
     .from(sessions)
-    .where(eq(sessions.refreshToken, oldRefreshToken))
+    .where(eq(sessions.refreshTokenHash, oldRefreshTokenHash))
     .limit(1);
 
   if (!session || session.expiresAt < new Date()) {
@@ -91,7 +102,8 @@ export async function rotateSession(
 }
 
 export async function revokeSession(refreshToken: string) {
-  await db.delete(sessions).where(eq(sessions.refreshToken, refreshToken));
+  const refreshTokenHash = hashRefreshToken(refreshToken);
+  await db.delete(sessions).where(eq(sessions.refreshTokenHash, refreshTokenHash));
 }
 
 export async function revokeAllUserSessions(userId: string) {

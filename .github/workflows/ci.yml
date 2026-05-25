@@ -41,4 +41,11 @@ jobs:
           GOOGLE_CLIENT_ID: dummy_client_id
           GOOGLE_CLIENT_SECRET: dummy_client_secret
           JWT_SECRET: dummy_jwt_secret
+          REFRESH_TOKEN_SECRET: dummy_refresh_token_secret
+          DATA_ENCRYPTION_KEY: dummy_data_encryption_key
+          JWT_REFRESH_EXPIRES_IN_MS: 2592000000
+          DB_SSL_REJECT_UNAUTHORIZED: false
+          RATE_LIMIT_WINDOW_MS: 60000
+          REDIS_URL: redis://127.0.0.1:6379
+          CLIENT_URL: http://localhost:5173
         run: pnpm test

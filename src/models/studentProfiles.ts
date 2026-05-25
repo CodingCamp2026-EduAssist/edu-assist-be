@@ -25,13 +25,15 @@ export const studentProfiles = pgTable('student_profiles', {
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 });
 
-export const StudentProfileSchema = z.object({
-  educationLevel: z.enum(['high_school', 'undergraduate', 'graduate']),
-  difficultyPreference: z.enum(['easy', 'medium', 'hard', 'adaptive']),
-  favouriteSubjects: z.array(z.string()),
-  pace: z.enum(['slow', 'medium', 'fast']),
-  explanationStyle: z.enum(['concise', 'detailed', 'step_by_step', 'analogy']),
-});
+export const StudentProfileSchema = z
+  .object({
+    educationLevel: z.enum(['high_school', 'undergraduate', 'graduate']),
+    difficultyPreference: z.enum(['easy', 'medium', 'hard', 'adaptive']),
+    favouriteSubjects: z.array(z.string()),
+    pace: z.enum(['slow', 'medium', 'fast']),
+    explanationStyle: z.enum(['concise', 'detailed', 'step_by_step', 'analogy']),
+  })
+  .strict();
 
 export type StudentProfileInput = z.infer<typeof StudentProfileSchema>;
 

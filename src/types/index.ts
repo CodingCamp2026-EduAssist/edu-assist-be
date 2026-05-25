@@ -15,7 +15,6 @@ export interface GoogleProfile {
   photos?: { value: string }[];
 }
 
-// Extend Express Request to include authenticated user
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
@@ -35,47 +34,57 @@ export type StreamEvent =
   | { event: 'message_end'; data: { messageId: string; fullText: string } }
   | { event: 'error'; data: { code: string; message: string } };
 
-export const Turn = z.object({
-  role: z.enum(['user', 'assistant'] as const),
-  content: z.string(),
-  citationIds: z.array(z.string()).optional(),
-  timestamp: z.string(),
-});
+export const Turn = z
+  .object({
+    role: z.enum(['user', 'assistant'] as const),
+    content: z.string().min(1).max(8000),
+    citationIds: z.array(z.uuid()).max(50).optional(),
+    timestamp: z.string().min(1),
+  })
+  .strict();
 
-export const ClientCitation = z.object({
-  id: z.string(),
-  messageId: z.string(),
-  role: z.enum(['user', 'assistant'] as const),
-  content: z.string(),
-  citationIds: z.array(z.string()).optional(),
-  createdAt: z.string(),
-});
+export const ClientCitation = z
+  .object({
+    id: z.uuid(),
+    messageId: z.uuid(),
+    role: z.enum(['user', 'assistant'] as const),
+    content: z.string().min(1).max(4000),
+    citationIds: z.array(z.uuid()).max(50).optional(),
+    createdAt: z.string().min(1),
+  })
+  .strict();
 
-export const TokenUsage = z.object({
-  promptTokens: z.number(),
-  completionTokens: z.number(),
-  totalTokens: z.number(),
-  retrievalChunks: z.number().optional(),
-});
+export const TokenUsage = z
+  .object({
+    promptTokens: z.number().int().nonnegative(),
+    completionTokens: z.number().int().nonnegative(),
+    totalTokens: z.number().int().nonnegative(),
+    retrievalChunks: z.number().int().nonnegative().optional(),
+  })
+  .strict();
 
-export const ClientMessage = z.object({
-  id: z.string(),
-  conversationId: z.string(),
-  role: z.enum(['user', 'assistant'] as const),
-  content: z.string(),
-  citationIds: z.array(z.string()).optional(),
-  createdAt: z.string(),
-});
+export const ClientMessage = z
+  .object({
+    id: z.uuid(),
+    conversationId: z.uuid(),
+    role: z.enum(['user', 'assistant'] as const),
+    content: z.string().min(1).max(8000),
+    citationIds: z.array(z.uuid()).max(50).optional(),
+    createdAt: z.string().min(1),
+  })
+  .strict();
 
-export const Citation = z.object({
-  id: z.string(),
-  sourceDocumentId: z.string(),
-  chunkId: z.string(),
-  excerpt: z.string(),
-  relevanceScore: z.number().optional(),
-  page: z.number().optional(),
-  section: z.string().optional(),
-});
+export const Citation = z
+  .object({
+    id: z.uuid(),
+    sourceDocumentId: z.uuid(),
+    chunkId: z.string().min(1),
+    excerpt: z.string().min(1).max(4000),
+    relevanceScore: z.number().min(0).max(1).optional(),
+    page: z.number().int().positive().optional(),
+    section: z.string().min(1).max(200).optional(),
+  })
+  .strict();
 
 export type ClientCitation = z.infer<typeof ClientCitation>;
 export type TokenUsage = z.infer<typeof TokenUsage>;

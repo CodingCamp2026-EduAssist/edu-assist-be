@@ -4,7 +4,7 @@ import { InferSelectModel, sql } from 'drizzle-orm';
 import { StudentProfile } from './studentProfiles';
 
 export const chatSessionStatusEnum = pgEnum('chat_session_status', ['active', 'archived']);
-export const chatMessageRoleEnum = pgEnum('chat_message_role', ['user', 'assistant', 'system']);
+export const chatMessageRoleEnum = pgEnum('chat_message_role', ['user', 'assistant']);
 
 export type GuestContext = {
   initialContext?: string;

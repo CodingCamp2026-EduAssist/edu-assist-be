@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1778816908490,
-      "tag": "0000_special_tiger_shark",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1779203699467,
-      "tag": "0001_loving_bloodaxe",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1779271467933,
-      "tag": "0002_harsh_the_enforcers",
+      "when": 1779448722386,
+      "tag": "0000_familiar_psylocke",
       "breakpoints": true
     }
   ]

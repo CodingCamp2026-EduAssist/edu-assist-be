@@ -4,6 +4,6 @@ import { env } from '../config/env';
 export const db = drizzle({
   connection: {
     connectionString: env.postgresUrl,
-    ssl: env.nodeEnv === 'production' ? { rejectUnauthorized: false } : false,
+    ssl: env.nodeEnv === 'production' ? { rejectUnauthorized: env.dbSslRejectUnauthorized } : false,
   },
 });
