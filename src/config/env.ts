@@ -41,6 +41,10 @@ function requireUrl(key: string, fallback: string): string {
   }
 }
 
+function optionalEnv(key: string): string | undefined {
+  return process.env[key]?.trim() || undefined;
+}
+
 const nodeEnv = process.env.NODE_ENV || 'development';
 
 export const env = {
@@ -64,4 +68,12 @@ export const env = {
   requestBodyLimit: process.env.REQUEST_BODY_LIMIT || '100kb',
   dbSslRejectUnauthorized: parseBoolean('DB_SSL_REJECT_UNAUTHORIZED', nodeEnv === 'production'),
   rateLimitWindowMs: parsePositiveInt('RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
+  upstashRedisRestUrl:
+    nodeEnv === 'production'
+      ? requireEnv('UPSTASH_REDIS_REST_URL')
+      : optionalEnv('UPSTASH_REDIS_REST_URL'),
+  upstashRedisRestToken:
+    nodeEnv === 'production'
+      ? requireEnv('UPSTASH_REDIS_REST_TOKEN')
+      : optionalEnv('UPSTASH_REDIS_REST_TOKEN'),
 } as const;

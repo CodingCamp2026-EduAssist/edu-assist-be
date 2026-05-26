@@ -1,4 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
+import { Ratelimit, type Duration } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 import { env } from '../config/env';
 import { getRedisClient } from '../lib/redis';
 
@@ -23,8 +25,11 @@ type RateLimitDecision = {
 };
 
 const buckets = new Map<string, Bucket>();
+const upstashLimiters = new Map<string, Ratelimit>();
+let upstashRedisClient: Redis | null = null;
 let lastCleanupAt = 0;
 let redisFallbackWarned = false;
+let upstashFailureWarned = false;
 
 function cleanupBuckets(now: number): void {
   if (now - lastCleanupAt < 60_000) return;
@@ -46,6 +51,76 @@ function applyHeaders(res: Response, decision: RateLimitDecision): void {
   res.setHeader('RateLimit-Limit', String(decision.limit));
   res.setHeader('RateLimit-Remaining', String(decision.remaining));
   res.setHeader('RateLimit-Reset', String(Math.ceil(decision.resetAt / 1000)));
+}
+
+function getWindowLabel(windowMs: number): Duration {
+  return `${Math.max(Math.ceil(windowMs / 1000), 1)} s` as Duration;
+}
+
+function getUpstashRedisClient(): Redis {
+  if (upstashRedisClient) {
+    return upstashRedisClient;
+  }
+
+  const { upstashRedisRestUrl, upstashRedisRestToken } = env;
+
+  if (!upstashRedisRestUrl || !upstashRedisRestToken) {
+    throw new Error('Missing required Upstash Redis environment variables');
+  }
+
+  upstashRedisClient = new Redis({
+    url: upstashRedisRestUrl,
+    token: upstashRedisRestToken,
+  });
+
+  return upstashRedisClient;
+}
+
+function getUpstashLimiter(config: RateLimitConfig): Ratelimit {
+  const cacheKey = `${config.keyPrefix}:${config.windowMs}:${config.max}`;
+  const existingLimiter = upstashLimiters.get(cacheKey);
+
+  if (existingLimiter) {
+    return existingLimiter;
+  }
+
+  const limiter = new Ratelimit({
+    redis: getUpstashRedisClient(),
+    limiter: Ratelimit.fixedWindow(config.max, getWindowLabel(config.windowMs)),
+    prefix: config.keyPrefix,
+    timeout: 1_000,
+    ephemeralCache: false,
+  });
+
+  upstashLimiters.set(cacheKey, limiter);
+  return limiter;
+}
+
+async function applyUpstashRateLimit(
+  config: RateLimitConfig,
+  key: string,
+): Promise<RateLimitDecision> {
+  const result = await getUpstashLimiter(config).limit(key);
+  const resetAt = result.reset;
+
+  if (!result.success) {
+    const retryAfterSeconds = Math.max(Math.ceil((resetAt - Date.now()) / 1000), 1);
+
+    return {
+      allowed: false,
+      limit: result.limit,
+      remaining: 0,
+      resetAt,
+      retryAfterSeconds,
+    };
+  }
+
+  return {
+    allowed: true,
+    limit: result.limit,
+    remaining: result.remaining,
+    resetAt,
+  };
 }
 
 function applyMemoryRateLimit(config: RateLimitConfig, key: string): RateLimitDecision {
@@ -85,6 +160,28 @@ function applyMemoryRateLimit(config: RateLimitConfig, key: string): RateLimitDe
     remaining: Math.max(config.max - bucket.count, 0),
     resetAt: bucket.resetAt,
   };
+}
+
+function sendRateLimitResponse(
+  res: Response,
+  config: RateLimitConfig,
+  decision: RateLimitDecision,
+): boolean {
+  applyHeaders(res, decision);
+
+  if (decision.allowed) {
+    return false;
+  }
+
+  const retryAfterSeconds = decision.retryAfterSeconds ?? 1;
+
+  res.setHeader('Retry-After', String(retryAfterSeconds));
+  res.status(429).json({
+    error: config.message,
+    retryAfterSeconds,
+  });
+
+  return true;
 }
 
 async function applyRedisRateLimit(
@@ -141,21 +238,37 @@ export function createRateLimiter(config: RateLimitConfig) {
     const key = resolveKey(req, config);
 
     try {
-      const decision = await applyRedisRateLimit(config, key);
-      applyHeaders(res, decision);
+      const decision =
+        env.nodeEnv === 'production'
+          ? await applyUpstashRateLimit(config, key)
+          : await applyRedisRateLimit(config, key);
 
-      if (!decision.allowed) {
-        res.setHeader('Retry-After', String(decision.retryAfterSeconds ?? 1));
-        res.status(429).json({
-          error: config.message,
-          retryAfterSeconds: decision.retryAfterSeconds ?? 1,
-        });
+      if (sendRateLimitResponse(res, config, decision)) {
         return;
       }
 
       next();
       return;
     } catch (error) {
+      if (env.nodeEnv === 'production') {
+        if (!upstashFailureWarned) {
+          upstashFailureWarned = true;
+          process.emitWarning(
+            `Upstash rate limiter unavailable: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            {
+              code: 'UPSTASH_RATE_LIMIT_UNAVAILABLE',
+            },
+          );
+        }
+
+        res.status(503).json({
+          error: 'Rate limit service unavailable. Please try again later.',
+        });
+        return;
+      }
+
       if (!redisFallbackWarned) {
         redisFallbackWarned = true;
         process.emitWarning(
@@ -169,14 +282,7 @@ export function createRateLimiter(config: RateLimitConfig) {
       }
 
       const decision = applyMemoryRateLimit(config, key);
-      applyHeaders(res, decision);
-
-      if (!decision.allowed) {
-        res.setHeader('Retry-After', String(decision.retryAfterSeconds ?? 1));
-        res.status(429).json({
-          error: config.message,
-          retryAfterSeconds: decision.retryAfterSeconds ?? 1,
-        });
+      if (sendRateLimitResponse(res, config, decision)) {
         return;
       }
 
@@ -187,8 +293,11 @@ export function createRateLimiter(config: RateLimitConfig) {
 
 export function resetRateLimitState(): void {
   buckets.clear();
+  upstashLimiters.clear();
   lastCleanupAt = 0;
   redisFallbackWarned = false;
+  upstashFailureWarned = false;
+  upstashRedisClient = null;
 }
 
 export const googleLoginLimiter = createRateLimiter({
