@@ -5,6 +5,8 @@ import { router as userRoutes } from './routes/user.routes';
 import { authRoutes } from './routes/auth.routes';
 import { chatRoutes } from './routes/chat.routes';
 import { env } from './config/env';
+import { apiReference } from '@scalar/express-api-reference';
+import { generateOpenAPIDocument } from './lib/openapi';
 import { securityHeaders, corsOptions } from './middlewares/security.middleware';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
 import cors from 'cors';
@@ -29,6 +31,12 @@ apiV1.use('/auth', authRoutes);
 apiV1.use('/chat', chatRoutes);
 
 app.use('/api/v1', apiV1);
+
+app.get('/openapi.json', (_req, res) => {
+  res.json(generateOpenAPIDocument());
+});
+
+app.use('/docs', apiReference({ url: '/openapi.json' }));
 
 app.get('/', (_req, res) => {
   res.json({ message: "Miley, what's good?" });

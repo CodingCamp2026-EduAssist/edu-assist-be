@@ -16,10 +16,12 @@ export const CreateConversationRequestDto = z
   .strict();
 
 export const CreateConversationResponseDto = z.object({
-  conversationId: z.string(),
-  createdAt: z.string(),
-  status: z.enum(['active', 'resumed', 'archived'] as const),
+  conversationId: z.uuid(),
+  guestSessionId: z.uuid().nullable(),
+  createdAt: z.iso.datetime(),
+  status: z.enum(['active'] as const),
   summary: z.string().optional(),
+  title: z.string().optional(),
 });
 
 export type CreateConversationRequestDto = z.infer<typeof CreateConversationRequestDto>;
