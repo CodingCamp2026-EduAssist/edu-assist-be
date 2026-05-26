@@ -48,4 +48,6 @@ jobs:
           RATE_LIMIT_WINDOW_MS: 60000
           REDIS_URL: redis://127.0.0.1:6379
           CLIENT_URL: http://localhost:5173
+          UPSTASH_REDIS_REST_URL: https://us1-redis.upstash.io/rest/v1/dummy
+          UPSTASH_REDIS_REST_TOKEN: dummy_upstash_token
         run: pnpm test
