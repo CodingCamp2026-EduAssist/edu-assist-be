@@ -5,8 +5,9 @@ import { router as userRoutes } from './routes/user.routes';
 import { authRoutes } from './routes/auth.routes';
 import { chatRoutes } from './routes/chat.routes';
 import { env } from './config/env';
-import { securityHeaders } from './middlewares/security.middleware';
+import { securityHeaders, corsOptions } from './middlewares/security.middleware';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
+import cors from 'cors';
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.use(express.json({ limit: env.requestBodyLimit }));
 app.use(express.urlencoded({ extended: false, limit: env.requestBodyLimit }));
 app.use(cookieParser());
 app.use(passport.initialize());
+app.use(cors(corsOptions));
 
 const apiV1 = Router();
 apiV1.use('/users', userRoutes);
