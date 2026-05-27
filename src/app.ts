@@ -4,6 +4,7 @@ import passport from './auth/passport';
 import { router as userRoutes } from './routes/user.routes';
 import { authRoutes } from './routes/auth.routes';
 import { chatRoutes } from './routes/chat.routes';
+import { documentRoutes } from './routes/documents.routes';
 import { env } from './config/env';
 import { apiReference } from '@scalar/express-api-reference';
 import { generateOpenAPIDocument } from './lib/openapi';
@@ -29,6 +30,7 @@ const apiV1 = Router();
 apiV1.use('/users', userRoutes);
 apiV1.use('/auth', authRoutes);
 apiV1.use('/chat', chatRoutes);
+apiV1.use('/documents', documentRoutes);
 
 app.use('/api/v1', apiV1);
 

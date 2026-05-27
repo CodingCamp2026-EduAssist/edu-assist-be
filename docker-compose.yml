@@ -34,6 +34,21 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    networks:
+      - eduassist_net
+    command: server /data --console-address ":9001"
+    volumes:
+      - eduassist_minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+
 volumes:
   eduassist_postgres_data:
   eduassist_redis_data:

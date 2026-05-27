@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
+import { MulterError } from 'multer';
 import { ZodError } from 'zod';
 import { env } from '../config/env';
 import { isAppError } from '../errors/app-error';
@@ -23,6 +24,19 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, next) => {
 
   if (error instanceof SyntaxError && 'body' in error) {
     res.status(400).json({ error: 'Invalid JSON payload' });
+    return;
+  }
+
+  if (error instanceof MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      res.status(413).json({ error: 'Payload too large' });
+      return;
+    }
+
+    res.status(400).json({
+      error: error.message,
+      code: error.code,
+    });
     return;
   }
 
