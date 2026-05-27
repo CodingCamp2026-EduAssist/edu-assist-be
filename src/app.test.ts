@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from './app';
+import { env } from './config/env';
 
 describe('Test app.ts', () => {
   test('Is alive route', () => {
@@ -44,5 +45,19 @@ describe('Test app.ts', () => {
         expect(res.text).toContain('Scalar API Reference');
         expect(res.text).toContain('/openapi.json');
       });
+  });
+
+  test('allows credentialed CORS preflight from the configured client origin', async () => {
+    const response = await request(app)
+      .options('/api/v1/chat/sessions')
+      .set('Origin', env.clientUrl)
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'Authorization, Content-Type');
+
+    expect(response.status).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe(env.clientUrl);
+    expect(response.headers['access-control-allow-credentials']).toBe('true');
+    expect(response.headers['access-control-allow-methods']).toContain('POST');
+    expect(response.headers['access-control-allow-headers']).toContain('Authorization');
   });
 });
