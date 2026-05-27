@@ -41,6 +41,21 @@ function requireUrl(key: string, fallback: string): string {
   }
 }
 
+function optionalUrl(key: string): string | undefined {
+  const raw = process.env[key]?.trim();
+
+  if (!raw) {
+    return undefined;
+  }
+
+  try {
+    new URL(raw);
+    return raw;
+  } catch {
+    throw new Error(`Environment variable ${key} must be a valid URL`);
+  }
+}
+
 function optionalEnv(key: string): string | undefined {
   return process.env[key]?.trim() || undefined;
 }
@@ -66,6 +81,15 @@ export const env = {
   inferenceApiUrl: requireUrl('INFERENCE_API_URL', 'http://localhost:8000'),
   redisUrl: requireUrl('REDIS_URL', 'redis://127.0.0.1:6379'),
   requestBodyLimit: process.env.REQUEST_BODY_LIMIT || '100kb',
+  storageEndpoint: optionalUrl('STORAGE_ENDPOINT'),
+  storageBucket: optionalEnv('STORAGE_BUCKET'),
+  storageRegion: optionalEnv('STORAGE_REGION') || 'us-east-1',
+  storageForcePathStyle: parseBoolean(
+    'STORAGE_FORCE_PATH_STYLE',
+    Boolean(process.env.STORAGE_ENDPOINT),
+  ),
+  storagePublicBaseUrl: optionalUrl('STORAGE_PUBLIC_BASE_URL'),
+  storageMaxUploadSizeBytes: parsePositiveInt('STORAGE_MAX_UPLOAD_SIZE_BYTES', 25 * 1024 * 1024),
   dbSslRejectUnauthorized: parseBoolean('DB_SSL_REJECT_UNAUTHORIZED', nodeEnv === 'production'),
   rateLimitWindowMs: parsePositiveInt('RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
   upstashRedisRestUrl:

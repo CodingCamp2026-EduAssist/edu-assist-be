@@ -50,4 +50,12 @@ jobs:
           CLIENT_URL: http://localhost:5173
           UPSTASH_REDIS_REST_URL: https://us1-redis.upstash.io/rest/v1/dummy
           UPSTASH_REDIS_REST_TOKEN: dummy_upstash_token
+          STORAGE_ENDPOINT: http://localhost:9000
+          STORAGE_BUCKET: dummy_bucket
+          STORAGE_REGION: us-east-1
+          STORAGE_FORCE_PATH_STYLE: true 
+          MINIO_ROOT_USER: dummy_minio_user
+          MINIO_ROOT_PASSWORD: dummy_minio_password
+          AWS_ACCESS_KEY_ID: dummy_aws_access_key_id
+          AWS_SECRET_ACCESS_KEY: dummy_aws_secret_access_key
         run: pnpm test
