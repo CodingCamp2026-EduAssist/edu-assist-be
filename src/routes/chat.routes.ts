@@ -6,7 +6,7 @@ import {
   resumeSession,
   sendMessage,
 } from '../controllers/chat.controller';
-import { optionalAuthenticate } from '../middlewares/auth.middleware';
+import { authenticate } from '../middlewares/auth.middleware';
 import {
   chatCreateLimiter,
   chatReadLimiter,
@@ -15,10 +15,10 @@ import {
 
 const router = Router();
 
-router.post('/sessions', chatCreateLimiter, optionalAuthenticate, createSession);
-router.get('/sessions', chatReadLimiter, listSessions);
-router.get('/sessions/:sessionId', chatReadLimiter, resumeSession);
-router.get('/sessions/:sessionId/messages', chatReadLimiter, listHistory);
-router.post('/sessions/:sessionId/messages', chatMessageLimiter, sendMessage);
+router.post('/sessions', chatCreateLimiter, authenticate, createSession);
+router.get('/sessions', chatReadLimiter, authenticate, listSessions);
+router.get('/sessions/:sessionId', chatReadLimiter, authenticate, resumeSession);
+router.get('/sessions/:sessionId/messages', chatReadLimiter, authenticate, listHistory);
+router.post('/sessions/:sessionId/messages', chatMessageLimiter, authenticate, sendMessage);
 
 export { router as chatRoutes };

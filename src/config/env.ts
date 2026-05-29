@@ -64,6 +64,7 @@ const nodeEnv = process.env.NODE_ENV || 'development';
 
 export const env = {
   nodeEnv,
+  baseUrl: requireUrl('BASE_URL', 'http://localhost:8080'),
   port: parsePositiveInt('PORT', 8080),
   postgresUrl: requireEnv('POSTGRES_URL'),
   googleClientId: requireEnv('GOOGLE_CLIENT_ID'),

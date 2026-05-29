@@ -1,4 +1,6 @@
+import jwt from 'jsonwebtoken';
 import request from 'supertest';
+import { env } from '../config/env';
 
 type MockRedisEvalOptions = {
   keys: string[];
@@ -25,45 +27,69 @@ jest.mock('../lib/redis', () => ({
 
 import app from '../app';
 
+const authHeaders = {
+  Authorization: `Bearer ${jwt.sign(
+    {
+      sub: '11111111-1111-4111-8111-111111111112',
+      email: 'test.student@example.com',
+      name: 'Test Student',
+    },
+    env.jwtSecret,
+    {
+      expiresIn: env.jwtAccessExpiresIn as jwt.SignOptions['expiresIn'],
+    },
+  )}`,
+};
+
 describe('Chat routes', () => {
   const sessionId = '11111111-1111-4111-8111-111111111111';
-  const guestSessionId = '22222222-2222-4222-8222-222222222222';
+  const emptyPayload = {};
+
+  const authenticatedPost = (endpoint: string) => request(app).post(endpoint).set(authHeaders);
 
   beforeEach(() => {
     mockRedisCounts.clear();
     jest.clearAllMocks();
   });
 
-  test('Guest session listing requires a guestSessionId when not authenticated', async () => {
-    const response = await request(app).get('/api/v1/chat/sessions');
+  test.each([
+    { method: 'get', endpoint: '/api/v1/chat/sessions' },
+    { method: 'post', endpoint: '/api/v1/chat/sessions' },
+    { method: 'get', endpoint: `/api/v1/chat/sessions/${sessionId}` },
+    { method: 'get', endpoint: `/api/v1/chat/sessions/${sessionId}/messages` },
+    { method: 'post', endpoint: `/api/v1/chat/sessions/${sessionId}/messages` },
+  ])('$method $endpoint requires authentication', async ({ method, endpoint }) => {
+    const responsePromise =
+      method === 'post' ? request(app).post(endpoint).send({}) : request(app).get(endpoint);
 
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual(
-      expect.objectContaining({
-        error: 'guestSessionId is required for guest sessions',
-        code: 'GUEST_SESSION_REQUIRED',
-      }),
-    );
+    return responsePromise.then((response) => {
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          error: 'Unauthorized',
+          code: 'UNAUTHORIZED',
+        }),
+      );
+    });
   });
 
   test('Message sending rejects an invalid payload before hitting the database', async () => {
-    const response = await request(app)
-      .post(`/api/v1/chat/sessions/${sessionId}/messages`)
-      .query({ guestSessionId })
-      .send({});
+    const response = await authenticatedPost(`/api/v1/chat/sessions/${sessionId}/messages`).send(
+      emptyPayload,
+    );
 
     expect(response.status).toBe(400);
     expect(response.body.error).toBe('Invalid chat message payload');
   });
 
   test('Message sending is rate limited after 30 requests in the same window', async () => {
-    const endpoint = `/api/v1/chat/sessions/${sessionId}/messages?guestSessionId=${guestSessionId}`;
+    const endpoint = `/api/v1/chat/sessions/${sessionId}/messages`;
 
     for (let attempt = 0; attempt < 30; attempt += 1) {
-      await request(app).post(endpoint).send({});
+      await authenticatedPost(endpoint).send(emptyPayload);
     }
 
-    const limitedResponse = await request(app).post(endpoint).send({});
+    const limitedResponse = await authenticatedPost(endpoint).send(emptyPayload);
 
     expect(limitedResponse.status).toBe(429);
     expect(limitedResponse.body).toEqual(
