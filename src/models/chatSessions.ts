@@ -18,7 +18,6 @@ export const chatSessions = pgTable(
   {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
-    guestSessionId: varchar('guest_session_id', { length: 255 }),
     title: varchar('title', { length: 255 }),
     status: chatSessionStatusEnum('status').default('active').notNull(),
     rollingSummary: text('rolling_summary'),
@@ -32,7 +31,6 @@ export const chatSessions = pgTable(
   },
   (table) => ({
     userIdIdx: index('chat_sessions_user_id_idx').on(table.userId),
-    guestSessionIdIdx: index('chat_sessions_guest_session_id_idx').on(table.guestSessionId),
     statusIdx: index('chat_sessions_status_idx').on(table.status),
     lastMessageAtIdx: index('chat_sessions_last_message_at_idx').on(table.lastMessageAt),
   }),

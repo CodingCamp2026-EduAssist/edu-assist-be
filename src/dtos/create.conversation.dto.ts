@@ -9,7 +9,6 @@ export const CreateConversationRequestDto = z
       .optional()
       .transform((value) => (value ? [...new Set(value)] : undefined)),
     initialContext: z.string().trim().min(1).max(4000).optional(),
-    guestSessionId: z.uuid().trim().optional(),
     title: z.string().trim().min(1).max(120).optional(),
     studentProfile: StudentProfileSchema.partial().strict().optional(),
   })
@@ -17,7 +16,6 @@ export const CreateConversationRequestDto = z
 
 export const CreateConversationResponseDto = z.object({
   conversationId: z.uuid(),
-  guestSessionId: z.uuid().nullable(),
   createdAt: z.iso.datetime(),
   status: z.enum(['active'] as const),
   summary: z.string().optional(),
