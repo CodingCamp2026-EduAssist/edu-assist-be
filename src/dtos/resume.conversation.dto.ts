@@ -3,7 +3,6 @@ import { ClientMessage } from '../types';
 
 export const ResumeConversationResponseDto = z.object({
   conversationId: z.string(),
-  guestSessionId: z.string().optional(),
   title: z.string().optional(),
   summary: z.string().optional(),
   createdAt: z.string(),

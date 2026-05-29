@@ -11,23 +11,9 @@ import {
 import { AppError } from '../errors/app-error';
 import { parseSchema } from '../utils/validation';
 
-const ListChatSessionsQueryDto = z
+const ChatSessionQueryDto = z
   .object({
-    guestSessionId: z.uuid().trim().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(20),
-  })
-  .strict();
-
-const ResumeChatSessionQueryDto = z
-  .object({
-    guestSessionId: z.uuid().trim().optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
-  })
-  .strict();
-
-const SendChatMessageQueryDto = z
-  .object({
-    guestSessionId: z.uuid().trim().optional(),
   })
   .strict();
 
@@ -37,25 +23,14 @@ const ChatSessionParamsDto = z
   })
   .strict();
 
-function toActor(req: Request, guestSessionId?: string) {
-  return {
-    userId: req.user?.id,
-    guestSessionId,
-  };
-}
+function requireAuthenticatedUser(req: Request): string {
+  const userId = req.user?.id;
 
-function requireActor(req: Request, guestSessionId?: string) {
-  const actor = toActor(req, guestSessionId);
-
-  if (!actor.userId && !actor.guestSessionId) {
-    throw new AppError(
-      400,
-      'guestSessionId is required for guest sessions',
-      'GUEST_SESSION_REQUIRED',
-    );
+  if (!userId) {
+    throw new AppError(401, 'Unauthorized', 'UNAUTHORIZED');
   }
 
-  return actor;
+  return userId;
 }
 
 export async function createSession(req: Request, res: Response): Promise<void> {
@@ -64,10 +39,10 @@ export async function createSession(req: Request, res: Response): Promise<void> 
     req.body,
     'Invalid chat session payload',
   );
+  const userId = requireAuthenticatedUser(req);
 
   const session = await createChatSession({
-    userId: req.user?.id,
-    guestSessionId: payload.guestSessionId,
+    userId,
     title: payload.title,
     initialContext: payload.initialContext,
     linkedDocumentIds: payload.linkedDocumentIds,
@@ -76,7 +51,6 @@ export async function createSession(req: Request, res: Response): Promise<void> 
 
   res.status(201).json({
     conversationId: session.id,
-    guestSessionId: session.guestSessionId,
     createdAt: session.createdAt.toISOString(),
     status: 'active' as const,
     summary: session.rollingSummary ?? undefined,
@@ -85,17 +59,17 @@ export async function createSession(req: Request, res: Response): Promise<void> 
 }
 
 export async function listSessions(req: Request, res: Response): Promise<void> {
-  const query = parseSchema(ListChatSessionsQueryDto, req.query, 'Invalid chat session query');
-  const actor = requireActor(req, query.guestSessionId);
+  const query = parseSchema(ChatSessionQueryDto, req.query, 'Invalid chat session query');
+  const actor = { userId: requireAuthenticatedUser(req) };
 
   const sessions = await listChatSessions(actor, query.limit);
   res.json({ sessions });
 }
 
 export async function resumeSession(req: Request, res: Response): Promise<void> {
-  const query = parseSchema(ResumeChatSessionQueryDto, req.query, 'Invalid chat session query');
+  const query = parseSchema(ChatSessionQueryDto, req.query, 'Invalid chat session query');
   const params = parseSchema(ChatSessionParamsDto, req.params, 'Invalid chat session params');
-  const actor = requireActor(req, query.guestSessionId);
+  const actor = { userId: requireAuthenticatedUser(req) };
 
   const session = await resumeChatSession(actor, params.sessionId, query.limit);
 
@@ -111,15 +85,14 @@ export async function resumeSession(req: Request, res: Response): Promise<void> 
     status: session.status,
     messageCount: session.messageCount,
     recentMessages: session.recentMessages,
-    guestSessionId: session.guestSessionId ?? undefined,
     title: session.title ?? undefined,
   });
 }
 
 export async function listHistory(req: Request, res: Response): Promise<void> {
-  const query = parseSchema(ResumeChatSessionQueryDto, req.query, 'Invalid chat session query');
+  const query = parseSchema(ChatSessionQueryDto, req.query, 'Invalid chat session query');
   const params = parseSchema(ChatSessionParamsDto, req.params, 'Invalid chat session params');
-  const actor = requireActor(req, query.guestSessionId);
+  const actor = { userId: requireAuthenticatedUser(req) };
 
   const session = await resumeChatSession(actor, params.sessionId, query.limit);
 
@@ -134,10 +107,9 @@ export async function listHistory(req: Request, res: Response): Promise<void> {
 }
 
 export async function sendMessage(req: Request, res: Response): Promise<void> {
-  const query = parseSchema(SendChatMessageQueryDto, req.query, 'Invalid chat session query');
   const body = parseSchema(PostMessageRequestDto, req.body, 'Invalid chat message payload');
   const params = parseSchema(ChatSessionParamsDto, req.params, 'Invalid chat session params');
-  const actor = requireActor(req, query.guestSessionId);
+  const actor = { userId: requireAuthenticatedUser(req) };
 
   if (body.stream) {
     throw new AppError(

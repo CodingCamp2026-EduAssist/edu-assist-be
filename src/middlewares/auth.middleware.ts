@@ -8,7 +8,7 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
     { session: false },
     (err: unknown, user: Express.User | false | null) => {
       if (err) {
-        next(err as Error);
+        next(err);
         return;
       }
 
@@ -18,25 +18,6 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
       }
 
       req.user = user;
-      next();
-    },
-  )(req, res, next);
-}
-
-export function optionalAuthenticate(req: Request, res: Response, next: NextFunction): void {
-  passport.authenticate(
-    'jwt',
-    { session: false },
-    (err: unknown, user: Express.User | false | null) => {
-      if (err) {
-        next(err as Error);
-        return;
-      }
-
-      if (user) {
-        req.user = user;
-      }
-
       next();
     },
   )(req, res, next);

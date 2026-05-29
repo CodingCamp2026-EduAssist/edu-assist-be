@@ -24,8 +24,8 @@ const apiBasePath = '/api/v1';
 const authBasePath = `${apiBasePath}/auth`;
 const chatBasePath = `${apiBasePath}/chat`;
 
-function bearerSecurityRequirement(optional = false) {
-  return optional ? [{ [bearerAuth.name]: [] }, {}] : [{ [bearerAuth.name]: [] }];
+function bearerSecurityRequirement() {
+  return [{ [bearerAuth.name]: [] }];
 }
 
 const isoDateTime = z.iso.datetime();
@@ -101,7 +101,6 @@ const chatSessionListItemSchema = registry.register(
   z
     .object({
       conversationId: z.uuid(),
-      guestSessionId: z.uuid().nullable(),
       title: z.string().nullable(),
       status: z.enum(['active', 'archived'] as const),
       summary: z.string().nullable(),
@@ -137,7 +136,6 @@ const resumeConversationResponseSchema = registry.register(
   z
     .object({
       conversationId: z.uuid(),
-      guestSessionId: z.uuid().optional(),
       title: z.string().optional(),
       summary: z.string().optional(),
       createdAt: isoDateTime,
@@ -252,9 +250,8 @@ function registerUserDocumentation() {
 }
 
 function registerChatDocumentation() {
-  const chatQuerySchema = z
+  const chatLimitQuerySchema = z
     .object({
-      guestSessionId: z.uuid().optional(),
       limit: z.coerce.number().int().min(1).max(100).default(20),
     })
     .strict();
@@ -270,8 +267,8 @@ function registerChatDocumentation() {
     path: `${chatBasePath}/sessions`,
     tags: ['chat'],
     summary: 'Create a conversation session',
-    description: 'Creates a chat session for an authenticated user or a guest session.',
-    security: bearerSecurityRequirement(true),
+    description: 'Creates a chat session for the authenticated user.',
+    security: bearerSecurityRequirement(),
     request: {
       body: {
         content: {
@@ -292,15 +289,14 @@ function registerChatDocumentation() {
     path: `${chatBasePath}/sessions`,
     tags: ['chat'],
     summary: 'List conversation sessions',
-    description:
-      'Returns sessions for the authenticated user, or for the guestSessionId provided in the query string.',
-    security: bearerSecurityRequirement(true),
+    description: 'Returns sessions for the authenticated user.',
+    security: bearerSecurityRequirement(),
     request: {
-      query: chatQuerySchema,
+      query: chatLimitQuerySchema,
     },
     responses: {
       200: jsonResponse(chatSessionListResponseSchema, 'Conversation sessions'),
-      400: jsonResponse(apiErrorSchema, 'Guest session context is required when not authenticated'),
+      400: jsonResponse(apiErrorSchema, 'Invalid chat session query parameters'),
     },
   });
 
@@ -310,14 +306,14 @@ function registerChatDocumentation() {
     tags: ['chat'],
     summary: 'Resume a conversation session',
     description: 'Returns the recent conversation history for the requested session.',
-    security: bearerSecurityRequirement(true),
+    security: bearerSecurityRequirement(),
     request: {
       params: chatParamsSchema,
-      query: chatQuerySchema,
+      query: chatLimitQuerySchema,
     },
     responses: {
       200: jsonResponse(resumeConversationResponseSchema, 'Conversation history'),
-      400: jsonResponse(apiErrorSchema, 'Invalid session or guest query parameters'),
+      400: jsonResponse(apiErrorSchema, 'Invalid chat session query parameters'),
       404: jsonResponse(apiErrorSchema, 'Conversation session not found'),
     },
   });
@@ -327,14 +323,14 @@ function registerChatDocumentation() {
     path: `${chatBasePath}/sessions/{sessionId}/messages`,
     tags: ['chat'],
     summary: 'List the messages in a session',
-    security: bearerSecurityRequirement(true),
+    security: bearerSecurityRequirement(),
     request: {
       params: chatParamsSchema,
-      query: chatQuerySchema,
+      query: chatLimitQuerySchema,
     },
     responses: {
       200: jsonResponse(chatSessionMessagesResponseSchema, 'Session messages'),
-      400: jsonResponse(apiErrorSchema, 'Invalid session or guest query parameters'),
+      400: jsonResponse(apiErrorSchema, 'Invalid chat session query parameters'),
       404: jsonResponse(apiErrorSchema, 'Conversation session not found'),
     },
   });
@@ -346,14 +342,9 @@ function registerChatDocumentation() {
     summary: 'Send a message to a session',
     description:
       'Creates a user message, calls inference, and returns the assistant response. Streaming is not implemented yet.',
-    security: bearerSecurityRequirement(true),
+    security: bearerSecurityRequirement(),
     request: {
       params: chatParamsSchema,
-      query: z
-        .object({
-          guestSessionId: z.uuid().optional(),
-        })
-        .strict(),
       body: {
         content: {
           'application/json': {

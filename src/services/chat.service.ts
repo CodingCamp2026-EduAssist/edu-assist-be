@@ -1,19 +1,13 @@
 import { desc, eq, sql } from 'drizzle-orm';
-import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/db';
-import {
-  studentProfiles,
-  type StudentProfileInput,
-  StudentProfileSchema,
-} from '../models/studentProfiles';
+import { studentProfiles, type StudentProfileInput } from '../models/studentProfiles';
 import { callInference, type InferenceRequest } from './inference.service';
 import type { ClientMessage, TokenUsage, Turn } from '../types';
 import { ChatSession, chatSessions, GuestContext } from '../models/chatSessions';
 import { ChatMessage, chatMessages } from '../models/chatMessages';
 
 export type ChatActor = {
-  userId?: string;
-  guestSessionId?: string;
+  userId: string;
 };
 
 export type CreateChatSessionInput = ChatActor & {
@@ -23,7 +17,7 @@ export type CreateChatSessionInput = ChatActor & {
   studentProfile?: Partial<StudentProfileInput>;
 };
 
-export type SendChatMessageInput = ChatActor & {
+export type SendChatMessageInput = {
   sessionId: string;
   content: string;
   attachmentIds?: string[];
@@ -33,7 +27,6 @@ export type SendChatMessageInput = ChatActor & {
 
 export type ChatSessionListItem = {
   conversationId: string;
-  guestSessionId: string | null;
   title: string | null;
   status: ChatSession['status'];
   summary: string | null;
@@ -45,7 +38,6 @@ export type ChatSessionListItem = {
 
 export type ChatSessionHistory = {
   conversationId: string;
-  guestSessionId: string | null;
   title: string | null;
   summary: string | null;
   createdAt: string;
@@ -173,15 +165,7 @@ async function getSessionById(sessionId: string): Promise<ChatSession | null> {
 }
 
 function canAccessSession(session: ChatSession, actor: ChatActor): boolean {
-  if (session.userId) {
-    return Boolean(actor.userId && actor.userId === session.userId);
-  }
-
-  if (session.guestSessionId) {
-    return Boolean(actor.guestSessionId && actor.guestSessionId === session.guestSessionId);
-  }
-
-  return false;
+  return Boolean(actor.userId && actor.userId === session.userId);
 }
 
 async function getRecentMessages(sessionId: string, limit = 20): Promise<ChatMessage[]> {
@@ -205,10 +189,6 @@ async function getMessageCount(sessionId: string): Promise<number> {
 }
 
 export async function createChatSession(input: CreateChatSessionInput): Promise<ChatSession> {
-  const guestSessionId = input.userId
-    ? (input.guestSessionId ?? null)
-    : (input.guestSessionId ?? uuidv4());
-
   if (input.userId && input.studentProfile) {
     await upsertStudentProfileForUser(input.userId, input.studentProfile);
   }
@@ -216,8 +196,7 @@ export async function createChatSession(input: CreateChatSessionInput): Promise<
   const [session] = await db
     .insert(chatSessions)
     .values({
-      userId: input.userId ?? null,
-      guestSessionId,
+      userId: input.userId,
       title: input.title ?? (input.initialContext ? deriveTitle(input.initialContext) : null),
       status: 'active',
       rollingSummary: null,
@@ -233,25 +212,16 @@ export async function listChatSessions(
   actor: ChatActor,
   limit = 20,
 ): Promise<ChatSessionListItem[]> {
-  if (!actor.userId && !actor.guestSessionId) {
-    return [];
-  }
-
   const sessions = await db
     .select()
     .from(chatSessions)
-    .where(
-      actor.userId
-        ? eq(chatSessions.userId, actor.userId)
-        : eq(chatSessions.guestSessionId, actor.guestSessionId!),
-    )
+    .where(eq(chatSessions.userId, actor.userId))
     .orderBy(desc(chatSessions.updatedAt))
     .limit(limit);
 
   const items = await Promise.all(
     sessions.map(async (session) => ({
       conversationId: session.id,
-      guestSessionId: session.guestSessionId,
       title: session.title,
       status: session.status,
       summary: session.rollingSummary ?? session.guestContext?.initialContext ?? null,
@@ -281,7 +251,6 @@ export async function resumeChatSession(
 
   return {
     conversationId: session.id,
-    guestSessionId: session.guestSessionId,
     title: session.title,
     summary: session.rollingSummary ?? session.guestContext?.initialContext ?? null,
     createdAt: session.createdAt.toISOString(),
@@ -339,12 +308,6 @@ export async function sendChatMessage(
       session.rollingSummary ?? session.guestContext?.initialContext ?? undefined,
     locale: input.locale,
     studentProfile,
-    guestContext: !session.userId
-      ? {
-          sessionId: session.guestSessionId ?? session.id,
-          temporaryProfile: session.guestContext?.temporaryProfile ?? {},
-        }
-      : undefined,
     linkedDocumentIds: session.guestContext?.linkedDocumentIds,
     stream: input.stream ?? false,
   };
@@ -385,37 +348,4 @@ export async function sendChatMessage(
     assistantMessage: toClientMessage(assistantMessage),
     tokenUsage: inferenceResponse.tokenUsage,
   };
-}
-
-export async function claimGuestSession(sessionId: string, userId: string): Promise<boolean> {
-  const session = await getSessionById(sessionId);
-
-  if (!session || session.userId || !session.guestSessionId) {
-    return false;
-  }
-
-  const normalizedProfile = session.guestContext?.temporaryProfile
-    ? StudentProfileSchema.parse({
-        educationLevel: 'undergraduate',
-        difficultyPreference: 'adaptive',
-        favouriteSubjects: [],
-        pace: 'medium',
-        explanationStyle: 'concise',
-        ...session.guestContext.temporaryProfile,
-      })
-    : null;
-
-  if (normalizedProfile) {
-    await upsertStudentProfileForUser(userId, normalizedProfile);
-  }
-
-  await db
-    .update(chatSessions)
-    .set({
-      userId,
-      updatedAt: new Date(),
-    })
-    .where(eq(chatSessions.id, session.id));
-
-  return true;
 }
