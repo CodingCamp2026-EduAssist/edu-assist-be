@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import { env } from '../config/env';
 
-const allowedOrigins = new Set([env.clientUrl, 'http://localhost:5173']);
+const allowedOrigins = new Set([env.clientUrl, env.baseUrl]);
 
 export function securityHeaders(_req: Request, res: Response, next: NextFunction): void {
   res.setHeader('X-Content-Type-Options', 'nosniff');

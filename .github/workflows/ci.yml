@@ -58,4 +58,5 @@ jobs:
           MINIO_ROOT_PASSWORD: dummy_minio_password
           AWS_ACCESS_KEY_ID: dummy_aws_access_key_id
           AWS_SECRET_ACCESS_KEY: dummy_aws_secret_access_key
+          INFERENCE_API_URL: https://dummy-inference-api.com
         run: pnpm test
