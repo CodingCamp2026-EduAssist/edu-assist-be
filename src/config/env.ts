@@ -80,6 +80,7 @@ export const env = {
   jwtRefreshExpiresIn: parsePositiveInt('JWT_REFRESH_EXPIRES_IN_MS', 7 * 24 * 60 * 60 * 1000),
   clientUrl: requireUrl('CLIENT_URL', 'http://localhost:3000'),
   inferenceApiUrl: requireUrl('INFERENCE_API_URL', 'http://localhost:8000'),
+  inferenceRequestTimeoutMs: parsePositiveInt('INFERENCE_REQUEST_TIMEOUT_MS', 75_000),
   redisUrl: requireUrl('REDIS_URL', 'redis://127.0.0.1:6379'),
   requestBodyLimit: process.env.REQUEST_BODY_LIMIT || '100kb',
   storageEndpoint: optionalUrl('STORAGE_ENDPOINT'),
