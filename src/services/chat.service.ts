@@ -6,6 +6,8 @@ import type { ClientMessage, TokenUsage, Turn } from '../types';
 import { ChatSession, chatSessions, GuestContext } from '../models/chatSessions';
 import { ChatMessage, chatMessages } from '../models/chatMessages';
 
+const DEFAULT_INFERENCE_MAX_TOKENS = 2048;
+
 export type ChatActor = {
   userId: string;
 };
@@ -304,12 +306,12 @@ export async function sendChatMessage(
     },
     conversationId: session.id,
     recentTurns: recentMessages.map(toTurn),
-    conversationSummary:
-      session.rollingSummary ?? session.guestContext?.initialContext ?? undefined,
+    conversationSummary: session.rollingSummary ?? session.guestContext?.initialContext ?? '',
     locale: input.locale,
-    studentProfile,
-    linkedDocumentIds: session.guestContext?.linkedDocumentIds,
+    studentProfile: studentProfile ?? {},
+    linkedDocumentIds: session.guestContext?.linkedDocumentIds ?? [],
     stream: input.stream ?? false,
+    maxTokens: DEFAULT_INFERENCE_MAX_TOKENS,
   };
 
   const inferenceResponse = await callInference(inferencePayload);

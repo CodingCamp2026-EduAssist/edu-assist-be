@@ -77,12 +77,12 @@ export const ClientMessage = z
 export const Citation = z
   .object({
     id: z.uuid(),
-    sourceDocumentId: z.uuid(),
+    sourceDocumentId: z.string().min(1).max(255),
     chunkId: z.string().min(1),
     excerpt: z.string().min(1).max(4000),
-    relevanceScore: z.number().min(0).max(1).optional(),
-    page: z.number().int().positive().optional(),
-    section: z.string().min(1).max(200).optional(),
+    relevanceScore: z.number().min(0).max(1).nullish(),
+    page: z.number().int().positive().nullish(),
+    section: z.string().min(1).max(200).nullish(),
   })
   .strict();
 

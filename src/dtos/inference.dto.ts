@@ -21,13 +21,6 @@ export const InferenceRequestDto = z
     conversationSummary: z.string().trim().max(8000).optional(),
     locale: z.string().trim().regex(localePattern).optional(),
     studentProfile: StudentProfileSchema.partial().strict().optional(),
-    guestContext: z
-      .object({
-        sessionId: z.uuid(),
-        temporaryProfile: StudentProfileSchema.partial().strict(),
-      })
-      .strict()
-      .optional(),
     linkedDocumentIds: z
       .array(z.uuid())
       .max(20)
