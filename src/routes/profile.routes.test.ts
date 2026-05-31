@@ -48,15 +48,17 @@ describe('Profile routes', () => {
   });
 
   test('GET /api/v1/profiles/me requires authentication', async () => {
-    return request(app).get('/api/v1/profiles/me').then((response) => {
-      expect(response.status).toBe(401);
-      expect(response.body).toEqual(
-        expect.objectContaining({
-          error: 'Unauthorized',
-          code: 'UNAUTHORIZED',
-        }),
-      );
-    });
+    return request(app)
+      .get('/api/v1/profiles/me')
+      .then((response) => {
+        expect(response.status).toBe(401);
+        expect(response.body).toEqual(
+          expect.objectContaining({
+            error: 'Unauthorized',
+            code: 'UNAUTHORIZED',
+          }),
+        );
+      });
   });
 
   test('PATCH /api/v1/profiles/me rejects invalid payloads for authenticated users', async () => {
