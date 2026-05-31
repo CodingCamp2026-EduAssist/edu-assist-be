@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { StudentProfileSchema } from '../models/studentProfiles';
 
 export const CreateConversationRequestDto = z
   .object({
@@ -10,7 +9,6 @@ export const CreateConversationRequestDto = z
       .transform((value) => (value ? [...new Set(value)] : undefined)),
     initialContext: z.string().trim().min(1).max(4000).optional(),
     title: z.string().trim().min(1).max(120).optional(),
-    studentProfile: StudentProfileSchema.partial().strict().optional(),
   })
   .strict();
 

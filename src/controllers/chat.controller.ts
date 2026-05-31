@@ -46,7 +46,6 @@ export async function createSession(req: Request, res: Response): Promise<void> 
     title: payload.title,
     initialContext: payload.initialContext,
     linkedDocumentIds: payload.linkedDocumentIds,
-    studentProfile: payload.studentProfile,
   });
 
   res.status(201).json({

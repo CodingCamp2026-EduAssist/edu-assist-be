@@ -24,6 +24,7 @@ describe('Test app.ts', () => {
         expect(res.body.paths).toEqual(
           expect.objectContaining({
             '/api/v1/auth/me': expect.any(Object),
+            '/api/v1/profiles/me': expect.any(Object),
             '/api/v1/chat/sessions': expect.any(Object),
           }),
         );

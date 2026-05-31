@@ -5,6 +5,7 @@ import { router as userRoutes } from './routes/user.routes';
 import { authRoutes } from './routes/auth.routes';
 import { chatRoutes } from './routes/chat.routes';
 import { documentRoutes } from './routes/documents.routes';
+import { profileRoutes } from './routes/profile.route';
 import { env } from './config/env';
 import { apiReference } from '@scalar/express-api-reference';
 import { generateOpenAPIDocument } from './lib/openapi';
@@ -31,6 +32,7 @@ apiV1.use('/users', userRoutes);
 apiV1.use('/auth', authRoutes);
 apiV1.use('/chat', chatRoutes);
 apiV1.use('/documents', documentRoutes);
+apiV1.use('/profiles', profileRoutes);
 
 app.use('/api/v1', apiV1);
 
