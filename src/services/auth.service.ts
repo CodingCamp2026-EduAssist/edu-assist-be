@@ -7,6 +7,8 @@ import { sessions } from '../models/sessions';
 import { env } from '../config/env';
 import type { JwtPayload } from '../types';
 import { createHmac } from 'crypto';
+import { DEFAULT_STUDENT_PROFILE } from './profile.service';
+import { studentProfiles } from '../models/studentProfiles';
 
 function hashRefreshToken(token: string): string {
   return createHmac('sha256', env.refreshTokenSecret).update(token).digest('hex');
@@ -25,16 +27,29 @@ export async function findOrCreateUserByGoogle(profile: {
 
   if (existing) return existing;
 
-  const [newUser] = await db
-    .insert(users)
-    .values({
-      email,
-      name: profile.displayName,
-      avatarUrl: profile.photos?.[0]?.value ?? null,
-      provider: 'google',
-      providerId: profile.id,
-    })
-    .returning();
+  const defaultStudentProfile = DEFAULT_STUDENT_PROFILE;
+
+  let newUser;
+
+  await db.transaction(async (tx) => {
+    [newUser] = await tx
+      .insert(users)
+      .values({
+        email,
+        name: profile.displayName,
+        avatarUrl: profile.photos?.[0]?.value ?? null,
+        provider: 'google',
+        providerId: profile.id,
+      })
+      .returning();
+
+    const userId = newUser.id;
+
+    await tx.insert(studentProfiles).values({
+      userId,
+      ...defaultStudentProfile,
+    });
+  });
 
   return newUser;
 }
