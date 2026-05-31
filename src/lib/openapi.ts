@@ -9,6 +9,7 @@ import {
   CreateConversationResponseDto,
 } from '../dtos/create.conversation.dto';
 import { PostMessageRequestDto, PostMessageResponseDto } from '../dtos/post.message.dto';
+import { StudentProfileSchema } from '../models/studentProfiles';
 
 extendZodWithOpenApi(z);
 
@@ -23,6 +24,7 @@ export const bearerAuth = registry.registerComponent('securitySchemes', 'bearerA
 const apiBasePath = '/api/v1';
 const authBasePath = `${apiBasePath}/auth`;
 const chatBasePath = `${apiBasePath}/chat`;
+const profileBasePath = `${apiBasePath}/profiles`;
 
 function bearerSecurityRequirement() {
   return [{ [bearerAuth.name]: [] }];
@@ -147,6 +149,15 @@ const resumeConversationResponseSchema = registry.register(
     .strict(),
 );
 
+const profileResponseSchema = registry.register(
+  'StudentProfileResponse',
+  z
+    .object({
+      profile: StudentProfileSchema,
+    })
+    .strict(),
+);
+
 function registerAuthDocumentation() {
   registry.registerPath({
     method: 'get',
@@ -245,6 +256,47 @@ function registerUserDocumentation() {
     summary: 'List sample users',
     responses: {
       200: jsonResponse(usersListSchema, 'Sample user list'),
+    },
+  });
+}
+
+function registerProfileDocumentation() {
+  const updateProfileSchema = StudentProfileSchema.partial().strict();
+
+  registry.registerPath({
+    method: 'get',
+    path: `${profileBasePath}/me`,
+    tags: ['profiles'],
+    summary: 'Return the current student profile',
+    description:
+      "Returns the authenticated user's persisted student profile, or defaults if none exists yet.",
+    security: bearerSecurityRequirement(),
+    responses: {
+      200: jsonResponse(profileResponseSchema, 'Student profile'),
+      401: jsonResponse(apiErrorSchema, 'Authentication required'),
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: `${profileBasePath}/me`,
+    tags: ['profiles'],
+    summary: 'Update the current student profile',
+    description: "Partially updates the authenticated user's persisted student profile.",
+    security: bearerSecurityRequirement(),
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            schema: updateProfileSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: jsonResponse(profileResponseSchema, 'Updated student profile'),
+      400: jsonResponse(apiErrorSchema, 'Invalid student profile payload'),
+      401: jsonResponse(apiErrorSchema, 'Authentication required'),
     },
   });
 }
@@ -364,6 +416,7 @@ function registerChatDocumentation() {
 
 registerAuthDocumentation();
 registerUserDocumentation();
+registerProfileDocumentation();
 registerChatDocumentation();
 
 export function generateOpenAPIDocument() {
@@ -384,6 +437,10 @@ export function generateOpenAPIDocument() {
       {
         name: 'users',
         description: 'User-facing endpoints',
+      },
+      {
+        name: 'profiles',
+        description: 'Persistent student profile endpoints',
       },
       {
         name: 'chat',

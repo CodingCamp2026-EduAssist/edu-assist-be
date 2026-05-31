@@ -1,7 +1,7 @@
 import { pgTable, text, timestamp, uuid, varchar, index, pgEnum, jsonb } from 'drizzle-orm/pg-core';
 import { users } from './users';
 import { InferSelectModel, sql } from 'drizzle-orm';
-import { StudentProfile } from './studentProfiles';
+import { type StudentProfileInput } from './studentProfiles';
 
 export const chatSessionStatusEnum = pgEnum('chat_session_status', ['active', 'archived']);
 export const chatMessageRoleEnum = pgEnum('chat_message_role', ['user', 'assistant']);
@@ -10,7 +10,8 @@ export type GuestContext = {
   initialContext?: string;
   linkedDocumentIds?: string[];
   locale?: string;
-  temporaryProfile?: Partial<StudentProfile>;
+  profileSnapshot?: StudentProfileInput;
+  temporaryProfile?: Partial<StudentProfileInput>;
 };
 
 export const chatSessions = pgTable(

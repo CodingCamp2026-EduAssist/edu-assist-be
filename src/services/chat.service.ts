@@ -1,10 +1,10 @@
 import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/db';
-import { studentProfiles, type StudentProfileInput } from '../models/studentProfiles';
 import { callInference, type InferenceRequest } from './inference.service';
 import type { ClientMessage, TokenUsage, Turn } from '../types';
 import { ChatSession, chatSessions, GuestContext } from '../models/chatSessions';
 import { ChatMessage, chatMessages } from '../models/chatMessages';
+import { resolveStudentProfileForUser } from './profile.service';
 
 const DEFAULT_INFERENCE_MAX_TOKENS = 2048;
 
@@ -16,7 +16,6 @@ export type CreateChatSessionInput = ChatActor & {
   title?: string;
   initialContext?: string;
   linkedDocumentIds?: string[];
-  studentProfile?: Partial<StudentProfileInput>;
 };
 
 export type SendChatMessageInput = {
@@ -49,31 +48,9 @@ export type ChatSessionHistory = {
   recentMessages: ClientMessage[];
 };
 
-function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined),
-  ) as Partial<T>;
-}
-
 function deriveTitle(content: string): string {
   const normalized = content.replace(/\s+/g, ' ').trim();
   return normalized.slice(0, 80);
-}
-
-function toStudentProfilePayload(profile: {
-  educationLevel: StudentProfileInput['educationLevel'];
-  difficultyPreference: StudentProfileInput['difficultyPreference'];
-  favouriteSubjects: StudentProfileInput['favouriteSubjects'];
-  pace: StudentProfileInput['pace'];
-  explanationStyle: StudentProfileInput['explanationStyle'];
-}): StudentProfileInput {
-  return {
-    educationLevel: profile.educationLevel,
-    difficultyPreference: profile.difficultyPreference,
-    favouriteSubjects: profile.favouriteSubjects,
-    pace: profile.pace,
-    explanationStyle: profile.explanationStyle,
-  };
 }
 
 function toClientMessage(message: ChatMessage): ClientMessage {
@@ -100,7 +77,10 @@ function toTurn(message: ChatMessage): Turn {
   };
 }
 
-function toGuestContext(input: CreateChatSessionInput): GuestContext {
+function toGuestContext(
+  input: CreateChatSessionInput,
+  profileSnapshot: Awaited<ReturnType<typeof resolveStudentProfileForUser>>,
+): GuestContext {
   const context: GuestContext = {};
 
   if (input.initialContext) {
@@ -111,50 +91,10 @@ function toGuestContext(input: CreateChatSessionInput): GuestContext {
     context.linkedDocumentIds = [...new Set(input.linkedDocumentIds)];
   }
 
-  if (input.studentProfile) {
-    context.temporaryProfile = stripUndefined(input.studentProfile) as Partial<StudentProfileInput>;
-  }
+  context.profileSnapshot = profileSnapshot;
+  context.temporaryProfile = profileSnapshot;
 
   return context;
-}
-
-async function getStudentProfileForUser(userId: string): Promise<StudentProfileInput | undefined> {
-  const [profile] = await db
-    .select()
-    .from(studentProfiles)
-    .where(eq(studentProfiles.userId, userId))
-    .limit(1);
-
-  if (!profile) {
-    return undefined;
-  }
-
-  return toStudentProfilePayload(profile);
-}
-
-async function upsertStudentProfileForUser(
-  userId: string,
-  profile: Partial<StudentProfileInput>,
-): Promise<void> {
-  const cleanedProfile = stripUndefined(profile);
-
-  if (Object.keys(cleanedProfile).length === 0) {
-    return;
-  }
-
-  await db
-    .insert(studentProfiles)
-    .values({
-      userId,
-      ...cleanedProfile,
-    })
-    .onConflictDoUpdate({
-      target: studentProfiles.userId,
-      set: {
-        ...cleanedProfile,
-        updatedAt: new Date(),
-      },
-    });
 }
 
 async function getSessionById(sessionId: string): Promise<ChatSession | null> {
@@ -191,9 +131,7 @@ async function getMessageCount(sessionId: string): Promise<number> {
 }
 
 export async function createChatSession(input: CreateChatSessionInput): Promise<ChatSession> {
-  if (input.userId && input.studentProfile) {
-    await upsertStudentProfileForUser(input.userId, input.studentProfile);
-  }
+  const profileSnapshot = await resolveStudentProfileForUser(input.userId);
 
   const [session] = await db
     .insert(chatSessions)
@@ -203,7 +141,7 @@ export async function createChatSession(input: CreateChatSessionInput): Promise<
       status: 'active',
       rollingSummary: null,
       lastMessageAt: null,
-      guestContext: toGuestContext(input),
+      guestContext: toGuestContext(input, profileSnapshot),
     })
     .returning();
 
@@ -296,9 +234,8 @@ export async function sendChatMessage(
     .returning();
 
   const recentMessages = await getRecentMessages(session.id, 20);
-  const studentProfile = session.userId
-    ? await getStudentProfileForUser(session.userId)
-    : undefined;
+  const studentProfile =
+    session.guestContext?.profileSnapshot ?? session.guestContext?.temporaryProfile;
   const inferencePayload: InferenceRequest = {
     userMessage: {
       content: input.content,
@@ -308,7 +245,7 @@ export async function sendChatMessage(
     recentTurns: recentMessages.map(toTurn),
     conversationSummary: session.rollingSummary ?? session.guestContext?.initialContext ?? '',
     locale: input.locale,
-    studentProfile: studentProfile ?? {},
+    studentProfile: studentProfile ?? undefined,
     linkedDocumentIds: session.guestContext?.linkedDocumentIds ?? [],
     stream: input.stream ?? false,
     maxTokens: DEFAULT_INFERENCE_MAX_TOKENS,

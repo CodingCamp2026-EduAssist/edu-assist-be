@@ -3,6 +3,7 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as JwtStrategy, ExtractJwt } from 'passport-jwt';
 import { env } from '../config/env';
 import { findOrCreateUserByGoogle } from '../services/auth.service';
+import { createStudentProfileForUser, DEFAULT_STUDENT_PROFILE } from '../services/profile.service';
 
 passport.use(
   new GoogleStrategy(
@@ -15,6 +16,11 @@ passport.use(
     async (_accessToken, _refreshToken, profile, done) => {
       try {
         const user = await findOrCreateUserByGoogle(profile);
+
+        const defaultStudentProfile = DEFAULT_STUDENT_PROFILE;
+
+        await createStudentProfileForUser(user.id, defaultStudentProfile);
+
         done(null, user);
       } catch (err) {
         done(err as Error, undefined);
