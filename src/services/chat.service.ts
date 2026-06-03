@@ -5,6 +5,7 @@ import type { Citation, ClientMessage, TokenUsage, Turn } from '../types';
 import { ChatSession, chatSessions, GuestContext } from '../models/chatSessions';
 import { ChatMessage, chatMessages } from '../models/chatMessages';
 import { resolveStudentProfileForUser } from './profile.service';
+import { CourseRecommendation } from '../dtos/inference.dto';
 
 const DEFAULT_INFERENCE_MAX_TOKENS = 2048;
 const MODEL_NAME = 'qwen2.5';
@@ -59,12 +60,10 @@ export type ChatMessageChunk =
       type: 'metadata';
       citations: Citation[];
       tokenUsage: TokenUsage;
+      courseRecommended: CourseRecommendation[];
     }
   | {
       type: 'done';
-      fullContent: string;
-      citations: Citation[];
-      tokenUsage: TokenUsage;
     }
   | {
       type: 'thinking';
@@ -346,10 +345,10 @@ export async function* streamChatMessage(
 
   if (!session || !canAccessSession(session, actor)) {
     yield {
-      type: 'done',
-      fullContent: '',
+      type: 'metadata',
       citations: [],
       tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, retrievalChunks: 0 },
+      courseRecommended: [],
     };
     return;
   }
@@ -375,7 +374,9 @@ export async function* streamChatMessage(
   };
 
   let fullResponse = '';
+  let fullThinkingProcess = '';
   let extractedCitations: Citation[] = [];
+  let courseRecommended: CourseRecommendation[] = [];
   let tokenUsage: TokenUsage = {
     promptTokens: 0,
     completionTokens: 0,
@@ -396,8 +397,11 @@ export async function* streamChatMessage(
       if (chunk.tokenUsage) {
         tokenUsage = chunk.tokenUsage;
       }
+      if (chunk.courseRecommended) {
+        courseRecommended = chunk.courseRecommended;
+      }
     } else if (chunk.type === 'thinking') {
-      fullResponse += chunk.content;
+      fullThinkingProcess += chunk.content;
       yield { type: 'thinking', content: chunk.content };
     }
   }
@@ -406,6 +410,7 @@ export async function* streamChatMessage(
     chatSessionId: session.id,
     role: 'assistant',
     content: fullResponse,
+    thinkingProcess: fullThinkingProcess,
     modelName: MODEL_NAME,
     modelMetadata: {
       provider: MODEL_PROVIDER,
@@ -429,9 +434,9 @@ export async function* streamChatMessage(
     .where(eq(chatSessions.id, session.id));
 
   yield {
-    type: 'done',
-    fullContent: fullResponse,
+    type: 'metadata',
     citations: extractedCitations,
     tokenUsage,
+    courseRecommended,
   };
 }

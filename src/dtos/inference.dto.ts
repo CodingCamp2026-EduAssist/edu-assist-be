@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Citation, TokenUsage, Turn } from '../types';
 import { StudentProfileSchema } from '../models/studentProfiles';
+import { CourseRecommendationDto } from '../models/courses';
 
 const localePattern = /^[a-z]{2}(?:-[A-Z]{2})?$/;
 
@@ -39,27 +40,35 @@ export const InferenceResponseDto = z
   })
   .strict();
 
-export const CourseRecommendationDto = z
-  .object({
-    title: z.string().min(1).max(255),
-    skills: z.array(z.string().min(1).max(100)).max(20),
-    rating: z.number().min(0).max(5).optional(),
-    level: z.string().min(1).max(100).optional(),
-    url: z.string().url().optional(),
-    hybrid_match: z.number().min(0).max(1).optional(),
-  })
-  .strict();
+export const InferenceStreamChunkMetadataDto = z.object({
+  summary: z.string().min(1).max(8000).optional(),
+  citations: Citation.array().optional(),
+  tokenUsage: TokenUsage.optional(),
+  course_recommended: CourseRecommendationDto.array().optional(),
+});
 
-export const InferenceStreamChunkDto = z
-  .object({
-    text: z.string().min(1).max(8000),
-    summary: z.string().min(1).max(8000).optional(),
-    course_recommended: CourseRecommendationDto.array().optional(),
-    citations: Citation.array().optional(),
-    tokenUsage: TokenUsage.optional(),
-    label: z.string().min(1).max(255).optional(),
-  })
-  .strict();
+export const ChatStreamChunkDto = z.object({
+  text: z.string().min(1).max(8000),
+});
+
+export const ThinkingStreamChunkDto = z.object({
+  text: z.string().max(8000).optional(),
+  label: z.string().min(1).max(255).optional(),
+});
+
+export const MetadataStreamChunkDto = z.object({
+  tokenUsed: z
+    .object({
+      promptTokens: z.number(),
+      completionTokens: z.number(),
+      totalTokens: z.number(),
+      retrievalChunks: z.number().optional(),
+    })
+    .optional(),
+  summary: z.string().optional(),
+  citations: z.array(z.unknown()).optional(),
+  course_recommended: z.array(CourseRecommendationDto).optional(),
+});
 
 export type InferenceRequest = z.infer<typeof InferenceRequestDto>;
 export type InferenceResponse = z.infer<typeof InferenceResponseDto>;

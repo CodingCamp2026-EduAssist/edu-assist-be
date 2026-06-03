@@ -21,6 +21,7 @@ export const chatMessages = pgTable(
       .references(() => chatSessions.id, { onDelete: 'cascade' }),
     role: chatMessageRoleEnum('role').notNull(),
     content: text('content').notNull(),
+    thinkingProcess: text('thinking_process'),
     modelName: varchar('model_name', { length: 100 }),
     modelMetadata: jsonb('model_metadata').$type<Record<string, unknown> | null>(),
     citations: jsonb('citations')

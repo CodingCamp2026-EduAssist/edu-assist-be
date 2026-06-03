@@ -153,7 +153,7 @@ async function streamChatMessageController(
 
   try {
     for await (const chunk of chunks) {
-      console.log('Sending chunk to client:', chunk);
+      console.log('Received chat message chunk:', chunk);
       if (chunk.type === 'text') {
         res.write(
           `data: ${JSON.stringify({ type: 'text', content: chunk.content })}
@@ -171,6 +171,13 @@ async function streamChatMessageController(
         if (chunk.tokenUsage) {
           res.write(
             `data: ${JSON.stringify({ type: 'metadata', tokenUsage: chunk.tokenUsage })}
+
+`,
+          );
+        }
+        if (chunk.courseRecommended) {
+          res.write(
+            `data: ${JSON.stringify({ type: 'metadata', courseRecommended: chunk.courseRecommended })}
 
 `,
           );

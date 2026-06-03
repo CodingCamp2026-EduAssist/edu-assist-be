@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CourseRecommendation } from '../dtos/inference.dto';
 
 export interface JwtPayload {
   sub: string;
@@ -29,7 +30,16 @@ declare global {
 export type StreamEvent =
   | { event: 'thinking-stream'; data: { label: string; text: string } }
   | { event: 'thinking-end' }
-  | { event: 'chat-stream'; data: { content: string } };
+  | { event: 'chat-stream'; data: { text: string } }
+  | {
+      event: 'metadata-stream';
+      data: {
+        tokenUsed: TokenUsage;
+        summary?: string;
+        course_recommended?: CourseRecommendation[];
+        citations?: Citation[];
+      };
+    };
 
 export const Turn = z
   .object({

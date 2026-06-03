@@ -1,9 +1,12 @@
 import { AppError } from '../errors/app-error';
 import { z } from 'zod';
 import {
+  ChatStreamChunkDto,
+  CourseRecommendation,
   InferenceRequestDto,
   InferenceResponseDto,
-  InferenceStreamChunkDto,
+  MetadataStreamChunkDto,
+  ThinkingStreamChunkDto,
 } from '../dtos/inference.dto';
 import { env } from '../config/env';
 import { Citation, StreamEvent, TokenUsage } from '../types';
@@ -13,7 +16,13 @@ export type InferenceResponse = z.infer<typeof InferenceResponseDto>;
 
 export type InferenceStreamChunk =
   | { type: 'text'; content: string }
-  | { type: 'metadata'; summary?: string; citations?: Citation[]; tokenUsage?: TokenUsage }
+  | {
+      type: 'metadata';
+      summary?: string;
+      citations?: Citation[];
+      tokenUsage?: TokenUsage;
+      courseRecommended?: CourseRecommendation[];
+    }
   | { type: 'thinking'; content: string };
 
 const InferenceUpstreamContentDto = z.union([
@@ -114,32 +123,40 @@ export async function* streamInference(
 
           try {
             const parsedData = JSON.parse(jsonString) as StreamEvent;
+
             const eventData =
-              parsedData.event === 'thinking-stream' || parsedData.event === 'chat-stream'
+              parsedData.event === 'thinking-stream' ||
+              parsedData.event === 'chat-stream' ||
+              parsedData.event === 'metadata-stream'
                 ? parsedData.data
                 : parsedData;
-            const chunkResult = InferenceStreamChunkDto.safeParse(eventData);
 
-            if (chunkResult.success) {
-              if (eventType === 'chat-stream' && chunkResult.data.text) {
-                yield { type: 'text', content: chunkResult.data.text };
-              } else if (
-                eventType === 'chat-stream' &&
-                (chunkResult.data.summary ||
-                  chunkResult.data.course_recommended ||
-                  chunkResult.data.citations)
-              ) {
+            if (eventType === 'chat-stream') {
+              const result = ChatStreamChunkDto.safeParse(eventData);
+              if (result.success) {
+                yield { type: 'text', content: result.data.text };
+              } else {
+                console.warn('chat-stream parse failed:', result.error.flatten());
+              }
+            } else if (eventType === 'thinking-stream') {
+              const result = ThinkingStreamChunkDto.safeParse(eventData);
+              if (result.success && (result.data.text || result.data.label)) {
+                yield { type: 'thinking', content: result.data.text ?? '' };
+              } else {
+                console.warn('thinking-stream parse failed:', result.error?.flatten());
+              }
+            } else if (eventType === 'metadata-stream') {
+              const result = MetadataStreamChunkDto.safeParse(eventData);
+              if (result.success) {
                 yield {
                   type: 'metadata',
-                  summary: chunkResult.data.summary,
-                  citations: chunkResult.data.citations,
-                  tokenUsage: chunkResult.data.tokenUsage,
+                  summary: result.data.summary,
+                  // citations: result.data.citations,
+                  tokenUsage: result.data.tokenUsed,
+                  courseRecommended: result.data.course_recommended,
                 };
-              } else if (
-                eventType === 'thinking-stream' &&
-                (chunkResult.data.text || chunkResult.data.label)
-              ) {
-                yield { type: 'thinking', content: chunkResult.data.text };
+              } else {
+                console.warn('metadata-stream parse failed:', result.error.flatten());
               }
             }
           } catch (error) {

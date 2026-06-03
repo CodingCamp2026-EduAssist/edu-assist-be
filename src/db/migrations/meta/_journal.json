@@ -15,6 +15,27 @@
       "when": 1780040497420,
       "tag": "0001_overconfident_owl",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780470927050,
+      "tag": "0002_absent_trauma",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1780475318324,
+      "tag": "0003_natural_dust",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1780476043006,
+      "tag": "0004_wandering_ember",
+      "breakpoints": true
     }
   ]
 }
