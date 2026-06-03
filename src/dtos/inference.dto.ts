@@ -39,5 +39,28 @@ export const InferenceResponseDto = z
   })
   .strict();
 
+export const CourseRecommendationDto = z
+  .object({
+    title: z.string().min(1).max(255),
+    skills: z.array(z.string().min(1).max(100)).max(20),
+    rating: z.number().min(0).max(5).optional(),
+    level: z.string().min(1).max(100).optional(),
+    url: z.string().url().optional(),
+    hybrid_match: z.number().min(0).max(1).optional(),
+  })
+  .strict();
+
+export const InferenceStreamChunkDto = z
+  .object({
+    text: z.string().min(1).max(8000),
+    summary: z.string().min(1).max(8000).optional(),
+    course_recommended: CourseRecommendationDto.array().optional(),
+    citations: Citation.array().optional(),
+    tokenUsage: TokenUsage.optional(),
+    label: z.string().min(1).max(255).optional(),
+  })
+  .strict();
+
 export type InferenceRequest = z.infer<typeof InferenceRequestDto>;
 export type InferenceResponse = z.infer<typeof InferenceResponseDto>;
+export type CourseRecommendation = z.infer<typeof CourseRecommendationDto>;

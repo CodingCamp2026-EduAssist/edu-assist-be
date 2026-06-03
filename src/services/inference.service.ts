@@ -1,11 +1,20 @@
 import { AppError } from '../errors/app-error';
 import { z } from 'zod';
-import { InferenceRequestDto, InferenceResponseDto } from '../dtos/inference.dto';
+import {
+  InferenceRequestDto,
+  InferenceResponseDto,
+  InferenceStreamChunkDto,
+} from '../dtos/inference.dto';
 import { env } from '../config/env';
-import { Citation, TokenUsage } from '../types';
+import { Citation, StreamEvent, TokenUsage } from '../types';
 
 export type InferenceRequest = z.infer<typeof InferenceRequestDto>;
 export type InferenceResponse = z.infer<typeof InferenceResponseDto>;
+
+export type InferenceStreamChunk =
+  | { type: 'text'; content: string }
+  | { type: 'metadata'; summary?: string; citations?: Citation[]; tokenUsage?: TokenUsage }
+  | { type: 'thinking'; content: string };
 
 const InferenceUpstreamContentDto = z.union([
   z.string().min(1).max(8000),
@@ -35,6 +44,121 @@ function isAbortError(error: unknown): boolean {
 
 function normalizeInferenceContent(content: z.infer<typeof InferenceUpstreamContentDto>): string {
   return typeof content === 'string' ? content : content.text;
+}
+
+export async function* streamInference(
+  payload: InferenceRequest,
+): AsyncGenerator<InferenceStreamChunk, void, unknown> {
+  const requestResult = InferenceRequestDto.safeParse(payload);
+
+  if (!requestResult.success) {
+    throw new AppError(
+      500,
+      'Invalid inference request payload',
+      'INFERENCE_REQUEST_INVALID',
+      requestResult.error.issues,
+    );
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), env.inferenceRequestTimeoutMs);
+
+  try {
+    const response = await fetch(env.inferenceApiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify(requestResult.data),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      throw new AppError(
+        502,
+        `Inference service failed with ${response.status}: ${errorText.slice(0, 500)}`,
+        'INFERENCE_UPSTREAM_ERROR',
+      );
+    }
+
+    if (!response.body) {
+      throw new AppError(502, 'Inference service returned an empty body', 'INFERENCE_EMPTY_BODY');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) break;
+
+      clearTimeout(timeoutId);
+      buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split('\n\n');
+
+      buffer = parts.pop() || '';
+
+      for (const part of parts) {
+        const eventStr = part.split('\n')[0]?.replace('event: ', '').trim();
+        const eventType = eventStr as StreamEvent['event'];
+
+        const dataLine = part.split('\n').find((line) => line.startsWith('data: '));
+
+        if (dataLine) {
+          const jsonString = dataLine.replace('data: ', '').trim();
+
+          try {
+            const parsedData = JSON.parse(jsonString) as StreamEvent;
+            const eventData =
+              parsedData.event === 'thinking-stream' || parsedData.event === 'chat-stream'
+                ? parsedData.data
+                : parsedData;
+            const chunkResult = InferenceStreamChunkDto.safeParse(eventData);
+
+            if (chunkResult.success) {
+              if (eventType === 'chat-stream' && chunkResult.data.text) {
+                yield { type: 'text', content: chunkResult.data.text };
+              } else if (
+                eventType === 'chat-stream' &&
+                (chunkResult.data.summary ||
+                  chunkResult.data.course_recommended ||
+                  chunkResult.data.citations)
+              ) {
+                yield {
+                  type: 'metadata',
+                  summary: chunkResult.data.summary,
+                  citations: chunkResult.data.citations,
+                  tokenUsage: chunkResult.data.tokenUsage,
+                };
+              } else if (
+                eventType === 'thinking-stream' &&
+                (chunkResult.data.text || chunkResult.data.label)
+              ) {
+                yield { type: 'thinking', content: chunkResult.data.text };
+              }
+            }
+          } catch (error) {
+            console.warn('Failed to parse SSE data chunk:', error);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+
+    if (isAbortError(error)) {
+      throw new AppError(504, 'Inference service request timed out', 'INFERENCE_TIMEOUT');
+    }
+
+    throw new AppError(503, 'Inference service unavailable', 'INFERENCE_UNAVAILABLE');
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function callInference(payload: InferenceRequest): Promise<InferenceResponse> {
