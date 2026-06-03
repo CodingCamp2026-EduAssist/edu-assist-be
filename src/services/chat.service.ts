@@ -1,7 +1,7 @@
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/db';
 import { streamInference, type InferenceRequest } from './inference.service';
-import type { Citation, ClientMessage, TokenUsage, Turn } from '../types';
+import type { Citation, ClientCourse, ClientMessage, TokenUsage, Turn } from '../types';
 import { ChatSession, chatSessions, GuestContext } from '../models/chatSessions';
 import { ChatMessage, chatMessages } from '../models/chatMessages';
 import { resolveStudentProfileForUser } from './profile.service';
@@ -77,7 +77,7 @@ function deriveTitle(content: string): string {
   return normalized.slice(0, 80);
 }
 
-function toClientMessage(message: ChatMessage): ClientMessage {
+function toClientMessage(message: ChatMessage, messageCourses?: ClientCourse[]): ClientMessage {
   return {
     id: message.id,
     conversationId: message.chatSessionId,
@@ -86,6 +86,7 @@ function toClientMessage(message: ChatMessage): ClientMessage {
     citationIds: message.citations?.length
       ? message.citations.map((citation) => citation.id)
       : undefined,
+    courses: message.role === 'assistant' && messageCourses?.length ? messageCourses : undefined,
     createdAt: message.createdAt.toISOString(),
   };
 }
@@ -143,6 +144,45 @@ async function getRecentMessages(sessionId: string, limit = 20): Promise<ChatMes
     .limit(limit);
 
   return messages.reverse();
+}
+
+async function getCoursesForMessages(messageIds: string[]): Promise<Map<string, ClientCourse[]>> {
+  const courseMap = new Map<string, ClientCourse[]>();
+
+  if (messageIds.length === 0) {
+    return courseMap;
+  }
+
+  const rows = await db
+    .select({
+      messageId: chatMessageCourses.chatMessageId,
+      id: courses.id,
+      title: courses.title,
+      skills: courses.skills,
+      rating: courses.rating,
+      level: courses.level,
+      url: courses.url,
+      hybridMatch: courses.hybridMatch,
+    })
+    .from(chatMessageCourses)
+    .innerJoin(courses, eq(chatMessageCourses.courseId, courses.id))
+    .where(inArray(chatMessageCourses.chatMessageId, messageIds));
+
+  for (const row of rows) {
+    const list = courseMap.get(row.messageId) ?? [];
+    list.push({
+      id: row.id,
+      title: row.title,
+      skills: row.skills,
+      rating: row.rating,
+      level: row.level,
+      url: row.url,
+      hybridMatch: row.hybridMatch,
+    });
+    courseMap.set(row.messageId, list);
+  }
+
+  return courseMap;
 }
 
 async function getMessageCount(sessionId: string): Promise<number> {
@@ -213,6 +253,9 @@ export async function resumeChatSession(
   const recentMessages = await getRecentMessages(session.id, limit);
   const messageCount = await getMessageCount(session.id);
 
+  const assistantMessageIds = recentMessages.filter((m) => m.role === 'assistant').map((m) => m.id);
+  const courseMap = await getCoursesForMessages(assistantMessageIds);
+
   return {
     conversationId: session.id,
     title: session.title,
@@ -221,7 +264,7 @@ export async function resumeChatSession(
     updatedAt: session.updatedAt.toISOString(),
     status: session.status === 'archived' ? 'archived' : 'resumed',
     messageCount,
-    recentMessages: recentMessages.map(toClientMessage),
+    recentMessages: recentMessages.map((m) => toClientMessage(m, courseMap.get(m.id))),
   };
 }
 
@@ -332,7 +375,7 @@ export async function sendChatMessage(
 
   return {
     userMessage: toClientMessage(userMessage),
-    assistantMessage: toClientMessage(assistantMessage),
+    assistantMessage: toClientMessage(assistantMessage, []),
     tokenUsage,
   };
 }
@@ -421,25 +464,32 @@ export async function* streamChatMessage(
     }
   }
 
-  await db.insert(chatMessages).values({
-    chatSessionId: session.id,
-    role: 'assistant',
-    content: fullResponse,
-    thinkingProcess: fullThinkingProcess,
-    modelName: MODEL_NAME,
-    modelMetadata: {
-      provider: MODEL_PROVIDER,
-    },
-    citations: extractedCitations ?? [],
-    promptTokens: tokenUsage.promptTokens,
-    completionTokens: tokenUsage.completionTokens,
-    totalTokens: tokenUsage.totalTokens,
-    retrievalChunks: tokenUsage.retrievalChunks ?? null,
-  });
+  const [assistantMsg] = await db
+    .insert(chatMessages)
+    .values({
+      chatSessionId: session.id,
+      role: 'assistant',
+      content: fullResponse,
+      thinkingProcess: fullThinkingProcess,
+      modelName: MODEL_NAME,
+      modelMetadata: {
+        provider: MODEL_PROVIDER,
+      },
+      citations: extractedCitations ?? [],
+      promptTokens: tokenUsage.promptTokens,
+      completionTokens: tokenUsage.completionTokens,
+      totalTokens: tokenUsage.totalTokens,
+      retrievalChunks: tokenUsage.retrievalChunks ?? null,
+    })
+    .returning();
 
   const title = session.title ?? deriveTitle(input.content);
 
-  const savedCourses = await saveCourseRecommendations(session.id, '', courseRecommended);
+  const savedCourses = await saveCourseRecommendations(
+    session.id,
+    assistantMsg.id,
+    courseRecommended,
+  );
   if (savedCourses.length === 0) {
     console.log('No new courses were saved based on the recommendations.');
   }

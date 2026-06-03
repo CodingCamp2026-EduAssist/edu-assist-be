@@ -70,6 +70,18 @@ export const TokenUsage = z
   })
   .strict();
 
+export const ClientCourse = z
+  .object({
+    id: z.uuid(),
+    title: z.string(),
+    skills: z.array(z.string()),
+    rating: z.number(),
+    level: z.string(),
+    url: z.string(),
+    hybridMatch: z.number(),
+  })
+  .strict();
+
 export const ClientMessage = z
   .object({
     id: z.uuid(),
@@ -77,6 +89,7 @@ export const ClientMessage = z
     role: z.enum(['user', 'assistant'] as const),
     content: z.string().min(1).max(8000),
     citationIds: z.array(z.uuid()).max(50).optional(),
+    courses: z.array(ClientCourse).optional(),
     createdAt: z.string().min(1),
   })
   .strict();
@@ -94,6 +107,7 @@ export const Citation = z
   .strict();
 
 export type ClientCitation = z.infer<typeof ClientCitation>;
+export type ClientCourse = z.infer<typeof ClientCourse>;
 export type TokenUsage = z.infer<typeof TokenUsage>;
 export type ClientMessage = z.infer<typeof ClientMessage>;
 export type Turn = z.infer<typeof Turn>;
