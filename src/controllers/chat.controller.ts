@@ -7,6 +7,7 @@ import {
   listChatSessions,
   resumeChatSession,
   sendChatMessage,
+  streamChatMessage,
 } from '../services/chat.service';
 import { AppError } from '../errors/app-error';
 import { parseSchema } from '../utils/validation';
@@ -111,11 +112,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
   const actor = { userId: requireAuthenticatedUser(req) };
 
   if (body.stream) {
-    throw new AppError(
-      501,
-      'Streaming message responses are not implemented yet',
-      'STREAMING_NOT_IMPLEMENTED',
-    );
+    return await streamChatMessageController(req, res, actor, body, params);
   }
 
   const result = await sendChatMessage(actor, {
@@ -131,4 +128,71 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
   }
 
   res.status(201).json(result);
+}
+
+async function streamChatMessageController(
+  req: Request,
+  res: Response,
+  actor: { userId: string },
+  body: z.infer<typeof PostMessageRequestDto>,
+  params: z.infer<typeof ChatSessionParamsDto>,
+): Promise<void> {
+  const chunks = streamChatMessage(actor, {
+    sessionId: params.sessionId,
+    content: body.content,
+    attachmentIds: body.attachmentIds,
+    locale: body.locale,
+    stream: true,
+  });
+
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+
+  try {
+    for await (const chunk of chunks) {
+      console.log('Sending chunk to client:', chunk);
+      if (chunk.type === 'text') {
+        res.write(
+          `data: ${JSON.stringify({ type: 'text', content: chunk.content })}
+
+`,
+        );
+      } else if (chunk.type === 'metadata') {
+        if (chunk.citations.length) {
+          res.write(
+            `data: ${JSON.stringify({ type: 'metadata', citations: chunk.citations })}
+
+`,
+          );
+        }
+        if (chunk.tokenUsage) {
+          res.write(
+            `data: ${JSON.stringify({ type: 'metadata', tokenUsage: chunk.tokenUsage })}
+
+`,
+          );
+        }
+      } else if (chunk.type === 'done') {
+        res.write(`data: ${JSON.stringify({ type: 'done' })}
+
+`);
+        res.end();
+      } else if (chunk.type === 'thinking') {
+        res.write(
+          `data: ${JSON.stringify({ type: 'thinking', content: chunk.content })}
+
+`,
+        );
+      }
+    }
+  } catch (error) {
+    console.error('Streaming error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown streaming error';
+    res.write(`data: ${JSON.stringify({ type: 'error', error: errorMessage })}\n\n`);
+    res.end();
+    throw error;
+  }
 }

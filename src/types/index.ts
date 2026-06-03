@@ -27,12 +27,9 @@ declare global {
 }
 
 export type StreamEvent =
-  | { event: 'message_start'; data: { messageId: string } }
-  | { event: 'delta'; data: { text: string } }
-  | { event: 'citation'; data: ClientCitation }
-  | { event: 'token_usage'; data: TokenUsage }
-  | { event: 'message_end'; data: { messageId: string; fullText: string } }
-  | { event: 'error'; data: { code: string; message: string } };
+  | { event: 'thinking-stream'; data: { label: string; text: string } }
+  | { event: 'thinking-end' }
+  | { event: 'chat-stream'; data: { content: string } };
 
 export const Turn = z
   .object({

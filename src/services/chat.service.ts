@@ -1,12 +1,14 @@
 import { desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/db';
-import { callInference, type InferenceRequest } from './inference.service';
-import type { ClientMessage, TokenUsage, Turn } from '../types';
+import { streamInference, type InferenceRequest } from './inference.service';
+import type { Citation, ClientMessage, TokenUsage, Turn } from '../types';
 import { ChatSession, chatSessions, GuestContext } from '../models/chatSessions';
 import { ChatMessage, chatMessages } from '../models/chatMessages';
 import { resolveStudentProfileForUser } from './profile.service';
 
 const DEFAULT_INFERENCE_MAX_TOKENS = 2048;
+const MODEL_NAME = 'qwen2.5';
+const MODEL_PROVIDER = 'python-inference';
 
 export type ChatActor = {
   userId: string;
@@ -47,6 +49,27 @@ export type ChatSessionHistory = {
   messageCount: number;
   recentMessages: ClientMessage[];
 };
+
+export type ChatMessageChunk =
+  | {
+      type: 'text';
+      content: string;
+    }
+  | {
+      type: 'metadata';
+      citations: Citation[];
+      tokenUsage: TokenUsage;
+    }
+  | {
+      type: 'done';
+      fullContent: string;
+      citations: Citation[];
+      tokenUsage: TokenUsage;
+    }
+  | {
+      type: 'thinking';
+      content: string;
+    };
 
 function deriveTitle(content: string): string {
   const normalized = content.replace(/\s+/g, ' ').trim();
@@ -211,6 +234,8 @@ export async function sendChatMessage(
 } | null> {
   const session = await getSessionById(input.sessionId);
 
+  console.log('Sending message to session:', session?.id);
+
   if (!session || !canAccessSession(session, actor)) {
     return null;
   }
@@ -251,23 +276,45 @@ export async function sendChatMessage(
     maxTokens: DEFAULT_INFERENCE_MAX_TOKENS,
   };
 
-  const inferenceResponse = await callInference(inferencePayload);
+  let fullResponse = '';
+  let extractedCitations: Citation[] = [];
+  let tokenUsage: TokenUsage = {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    retrievalChunks: 0,
+  };
+
+  const stream = await streamInference(inferencePayload);
+
+  for await (const chunk of stream) {
+    if (chunk.type === 'text') {
+      fullResponse += chunk.content;
+    } else if (chunk.type === 'metadata') {
+      if (chunk.citations) {
+        extractedCitations = chunk.citations;
+      }
+      if (chunk.tokenUsage) {
+        tokenUsage = chunk.tokenUsage;
+      }
+    }
+  }
 
   const [assistantMessage] = await db
     .insert(chatMessages)
     .values({
       chatSessionId: session.id,
       role: 'assistant',
-      content: inferenceResponse.content,
+      content: fullResponse,
       modelName: 'python-inference',
       modelMetadata: {
         provider: 'python-inference',
       },
-      citations: inferenceResponse.citations ?? [],
-      promptTokens: inferenceResponse.tokenUsage.promptTokens,
-      completionTokens: inferenceResponse.tokenUsage.completionTokens,
-      totalTokens: inferenceResponse.tokenUsage.totalTokens,
-      retrievalChunks: inferenceResponse.tokenUsage.retrievalChunks ?? null,
+      citations: extractedCitations ?? [],
+      promptTokens: tokenUsage.promptTokens,
+      completionTokens: tokenUsage.completionTokens,
+      totalTokens: tokenUsage.totalTokens,
+      retrievalChunks: tokenUsage.retrievalChunks ?? null,
     })
     .returning();
 
@@ -285,6 +332,106 @@ export async function sendChatMessage(
   return {
     userMessage: toClientMessage(userMessage),
     assistantMessage: toClientMessage(assistantMessage),
-    tokenUsage: inferenceResponse.tokenUsage,
+    tokenUsage,
+  };
+}
+
+export async function* streamChatMessage(
+  actor: ChatActor,
+  input: SendChatMessageInput,
+): AsyncGenerator<ChatMessageChunk> {
+  const session = await getSessionById(input.sessionId);
+
+  console.log('Sending streaming message to session:', session?.id);
+
+  if (!session || !canAccessSession(session, actor)) {
+    yield {
+      type: 'done',
+      fullContent: '',
+      citations: [],
+      tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, retrievalChunks: 0 },
+    };
+    return;
+  }
+
+  const now = new Date();
+
+  const recentMessages = await getRecentMessages(session.id, 20);
+  const studentProfile =
+    session.guestContext?.profileSnapshot ?? session.guestContext?.temporaryProfile;
+  const inferencePayload: InferenceRequest = {
+    userMessage: {
+      content: input.content,
+      attachmentIds: input.attachmentIds,
+    },
+    conversationId: session.id,
+    recentTurns: recentMessages.map(toTurn),
+    conversationSummary: session.rollingSummary ?? session.guestContext?.initialContext ?? '',
+    locale: input.locale,
+    studentProfile: studentProfile ?? undefined,
+    linkedDocumentIds: session.guestContext?.linkedDocumentIds ?? [],
+    stream: true,
+    maxTokens: DEFAULT_INFERENCE_MAX_TOKENS,
+  };
+
+  let fullResponse = '';
+  let extractedCitations: Citation[] = [];
+  let tokenUsage: TokenUsage = {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    retrievalChunks: 0,
+  };
+
+  const stream = await streamInference(inferencePayload);
+
+  for await (const chunk of stream) {
+    if (chunk.type === 'text') {
+      fullResponse += chunk.content;
+      yield { type: 'text', content: chunk.content };
+    } else if (chunk.type === 'metadata') {
+      if (chunk.citations) {
+        extractedCitations = chunk.citations;
+      }
+      if (chunk.tokenUsage) {
+        tokenUsage = chunk.tokenUsage;
+      }
+    } else if (chunk.type === 'thinking') {
+      fullResponse += chunk.content;
+      yield { type: 'thinking', content: chunk.content };
+    }
+  }
+
+  await db.insert(chatMessages).values({
+    chatSessionId: session.id,
+    role: 'assistant',
+    content: fullResponse,
+    modelName: MODEL_NAME,
+    modelMetadata: {
+      provider: MODEL_PROVIDER,
+    },
+    citations: extractedCitations ?? [],
+    promptTokens: tokenUsage.promptTokens,
+    completionTokens: tokenUsage.completionTokens,
+    totalTokens: tokenUsage.totalTokens,
+    retrievalChunks: tokenUsage.retrievalChunks ?? null,
+  });
+
+  const title = session.title ?? deriveTitle(input.content);
+
+  await db
+    .update(chatSessions)
+    .set({
+      title,
+      lastMessageAt: now,
+      updatedAt: now,
+    })
+    .where(eq(chatSessions.id, session.id));
+
+  yield {
+    type: 'done',
+    fullContent: fullResponse,
+    citations: extractedCitations,
+    tokenUsage,
   };
 }
