@@ -36,6 +36,13 @@
       "when": 1780476043006,
       "tag": "0004_wandering_ember",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780509605866,
+      "tag": "0005_thankful_crusher_hogan",
+      "breakpoints": true
     }
   ]
 }

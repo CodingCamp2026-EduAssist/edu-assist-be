@@ -1,0 +1,1 @@
+ALTER TABLE "courses" ADD CONSTRAINT "courses_url_unique" UNIQUE("url");
