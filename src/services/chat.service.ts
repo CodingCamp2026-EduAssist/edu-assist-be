@@ -6,6 +6,8 @@ import { ChatSession, chatSessions, GuestContext } from '../models/chatSessions'
 import { ChatMessage, chatMessages } from '../models/chatMessages';
 import { resolveStudentProfileForUser } from './profile.service';
 import { CourseRecommendation } from '../dtos/inference.dto';
+import { Course, courses } from '../models/courses';
+import { chatMessageCourses } from '../models/chatMessageCourses';
 
 const DEFAULT_INFERENCE_MAX_TOKENS = 2048;
 const MODEL_NAME = 'qwen2.5';
@@ -373,6 +375,19 @@ export async function* streamChatMessage(
     maxTokens: DEFAULT_INFERENCE_MAX_TOKENS,
   };
 
+  await db.insert(chatMessages).values({
+    chatSessionId: session.id,
+    role: 'user',
+    content: input.content,
+    modelName: null,
+    modelMetadata: input.locale ? { locale: input.locale } : null,
+    citations: [],
+    promptTokens: null,
+    completionTokens: null,
+    totalTokens: null,
+    retrievalChunks: null,
+  });
+
   let fullResponse = '';
   let fullThinkingProcess = '';
   let extractedCitations: Citation[] = [];
@@ -424,6 +439,11 @@ export async function* streamChatMessage(
 
   const title = session.title ?? deriveTitle(input.content);
 
+  const savedCourses = await saveCourseRecommendations(session.id, '', courseRecommended);
+  if (savedCourses.length === 0) {
+    console.log('No new courses were saved based on the recommendations.');
+  }
+
   await db
     .update(chatSessions)
     .set({
@@ -439,4 +459,42 @@ export async function* streamChatMessage(
     tokenUsage,
     courseRecommended,
   };
+}
+
+export async function saveCourseRecommendations(
+  sessionId: string,
+  messageId: string,
+  recommendations: CourseRecommendation[],
+): Promise<Course[]> {
+  if (recommendations.length === 0) {
+    return [];
+  }
+
+  let result: Course[] | null = null;
+
+  await db.transaction(async (tx) => {
+    result = await tx
+      .insert(courses)
+      .values(
+        recommendations.map((rec) => ({
+          title: rec.title,
+          skills: rec.skills,
+          rating: rec.rating,
+          level: rec.level,
+          url: rec.url,
+          hybridMatch: rec.hybrid_match,
+        })),
+      )
+      .onConflictDoNothing({ target: courses.url })
+      .returning();
+
+    await tx.insert(chatMessageCourses).values(
+      result.map((course) => ({
+        chatMessageId: messageId,
+        courseId: course.id,
+      })),
+    );
+  });
+
+  return result ?? [];
 }
