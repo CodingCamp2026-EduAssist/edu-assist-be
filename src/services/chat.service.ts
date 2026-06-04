@@ -380,6 +380,29 @@ export async function sendChatMessage(
   };
 }
 
+export async function removeChatSession(actor: ChatActor, sessionId: string): Promise<boolean> {
+  const session = await getSessionById(sessionId);
+
+  if (!session || !canAccessSession(session, actor)) {
+    return false;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(chatMessageCourses)
+      .where(
+        inArray(
+          chatMessageCourses.chatMessageId,
+          sql`(SELECT id FROM ${chatMessages} WHERE chat_session_id = ${session.id})`,
+        ),
+      );
+    await tx.delete(chatMessages).where(eq(chatMessages.chatSessionId, session.id));
+    await tx.delete(chatSessions).where(eq(chatSessions.id, session.id));
+  });
+
+  return true;
+}
+
 export async function* streamChatMessage(
   actor: ChatActor,
   input: SendChatMessageInput,
