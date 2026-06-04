@@ -18,5 +18,9 @@ export const PostMessageResponseDto = z.object({
   tokenUsage: TokenUsage,
 });
 
+export const RemoveSessionResponseDto = z.object({
+  sessionId: z.uuid().trim(),
+});
+
 export type PostMessageRequestDto = z.infer<typeof PostMessageRequestDto>;
 export type PostMessageResponseDto = z.infer<typeof PostMessageResponseDto>;

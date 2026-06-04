@@ -1,10 +1,11 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { CreateConversationRequestDto } from '../dtos/create.conversation.dto';
-import { PostMessageRequestDto } from '../dtos/post.message.dto';
+import { PostMessageRequestDto, RemoveSessionResponseDto } from '../dtos/post.message.dto';
 import {
   createChatSession,
   listChatSessions,
+  removeChatSession,
   resumeChatSession,
   sendChatMessage,
   streamChatMessage,
@@ -163,21 +164,21 @@ async function streamChatMessageController(
       } else if (chunk.type === 'metadata') {
         if (chunk.citations.length) {
           res.write(
-            `data: ${JSON.stringify({ type: 'metadata', citations: chunk.citations })}
+            `data: ${JSON.stringify({ type: 'citations', citations: chunk.citations })}
 
 `,
           );
         }
         if (chunk.tokenUsage) {
           res.write(
-            `data: ${JSON.stringify({ type: 'metadata', tokenUsage: chunk.tokenUsage })}
+            `data: ${JSON.stringify({ type: 'tokenUsage', tokenUsage: chunk.tokenUsage })}
 
 `,
           );
         }
         if (chunk.courseRecommended) {
           res.write(
-            `data: ${JSON.stringify({ type: 'metadata', courseRecommended: chunk.courseRecommended })}
+            `data: ${JSON.stringify({ type: 'courseRecommended', courseRecommended: chunk.courseRecommended })}
 
 `,
           );
@@ -202,4 +203,16 @@ async function streamChatMessageController(
     res.end();
     throw error;
   }
+}
+
+export async function removeSession(req: Request, res: Response): Promise<void> {
+  const { sessionId } = parseSchema(
+    RemoveSessionResponseDto,
+    req.params,
+    'Invalid chat message payload',
+  );
+
+  await removeChatSession({ userId: requireAuthenticatedUser(req) }, sessionId);
+
+  res.json({ sessionId });
 }

@@ -8,7 +8,11 @@ import {
   CreateConversationRequestDto,
   CreateConversationResponseDto,
 } from '../dtos/create.conversation.dto';
-import { PostMessageRequestDto, PostMessageResponseDto } from '../dtos/post.message.dto';
+import {
+  PostMessageRequestDto,
+  PostMessageResponseDto,
+  RemoveSessionResponseDto,
+} from '../dtos/post.message.dto';
 import {
   ListDocumentsQuerySchema,
   ListDocumentsResponseSchema,
@@ -517,6 +521,24 @@ function registerChatDocumentation() {
       400: jsonResponse(apiErrorSchema, 'Invalid chat message payload'),
       404: jsonResponse(apiErrorSchema, 'Conversation session not found'),
       501: jsonResponse(apiErrorSchema, 'Streaming responses are not implemented yet'),
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: `${chatBasePath}/sessions/{sessionId}`,
+    tags: ['chat'],
+    summary: 'Remove a conversation session',
+    description: 'Deletes the specified chat session for the authenticated user.',
+    security: bearerSecurityRequirement(),
+    request: {
+      params: chatParamsSchema,
+    },
+    responses: {
+      200: jsonResponse(RemoveSessionResponseDto, 'Session removed successfully'),
+      400: jsonResponse(apiErrorSchema, 'Invalid chat session parameters'),
+      401: jsonResponse(apiErrorSchema, 'Authentication required'),
+      404: jsonResponse(apiErrorSchema, 'Chat session not found'),
     },
   });
 }
