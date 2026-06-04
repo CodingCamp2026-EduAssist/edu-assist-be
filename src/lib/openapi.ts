@@ -9,6 +9,13 @@ import {
   CreateConversationResponseDto,
 } from '../dtos/create.conversation.dto';
 import { PostMessageRequestDto, PostMessageResponseDto } from '../dtos/post.message.dto';
+import {
+  ListDocumentsQuerySchema,
+  ListDocumentsResponseSchema,
+  UploadDocumentResponseSchema,
+  UploadBatchDocumentsResponseSchema,
+  DeleteDocumentBodySchema,
+} from '../dtos/document.dto';
 import { StudentProfileSchema } from '../models/studentProfiles';
 
 extendZodWithOpenApi(z);
@@ -25,6 +32,7 @@ const apiBasePath = '/api/v1';
 const authBasePath = `${apiBasePath}/auth`;
 const chatBasePath = `${apiBasePath}/chat`;
 const profileBasePath = `${apiBasePath}/profiles`;
+const documentBasePath = `${apiBasePath}/documents`;
 
 function bearerSecurityRequirement() {
   return [{ [bearerAuth.name]: [] }];
@@ -301,6 +309,105 @@ function registerProfileDocumentation() {
   });
 }
 
+function registerDocumentDocumentation() {
+  registry.registerPath({
+    method: 'get',
+    path: `${documentBasePath}/`,
+    tags: ['documents'],
+    summary: 'List documents',
+    description: 'Returns a paginated list of documents for the authenticated user.',
+    security: bearerSecurityRequirement(),
+    request: {
+      query: ListDocumentsQuerySchema,
+    },
+    responses: {
+      200: jsonResponse(ListDocumentsResponseSchema, 'List of documents'),
+      401: jsonResponse(apiErrorSchema, 'Authentication required'),
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: `${documentBasePath}/`,
+    tags: ['documents'],
+    summary: 'Upload a single document',
+    description: 'Uploads a single document file (PDF, DOCX, TXT, or MD).',
+    security: bearerSecurityRequirement(),
+    request: {
+      body: {
+        content: {
+          'multipart/form-data': {
+            schema: z.object({
+              file: z.any(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      201: jsonResponse(UploadDocumentResponseSchema, 'Document uploaded successfully'),
+      400: jsonResponse(apiErrorSchema, 'Invalid document payload or unsupported file type'),
+      401: jsonResponse(apiErrorSchema, 'Authentication required'),
+      413: jsonResponse(apiErrorSchema, 'File size exceeds the maximum allowed'),
+      500: jsonResponse(apiErrorSchema, 'Document upload failed'),
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: `${documentBasePath}/batch`,
+    tags: ['documents'],
+    summary: 'Upload multiple documents',
+    description:
+      'Uploads up to 10 document files in a single request. Each file is processed independently.',
+    security: bearerSecurityRequirement(),
+    request: {
+      body: {
+        content: {
+          'multipart/form-data': {
+            schema: z.object({
+              files: z.array(z.any()),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      207: jsonResponse(UploadBatchDocumentsResponseSchema, 'Batch upload completed'),
+      400: jsonResponse(apiErrorSchema, 'Invalid document payload or unsupported file type'),
+      401: jsonResponse(apiErrorSchema, 'Authentication required'),
+      413: jsonResponse(apiErrorSchema, 'File size exceeds the maximum allowed'),
+      500: jsonResponse(apiErrorSchema, 'Document batch upload failed'),
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: `${documentBasePath}/`,
+    tags: ['documents'],
+    summary: 'Delete documents',
+    description:
+      "Deletes documents by their S3 file keys. Matches keys against the authenticated user's documents.",
+    security: bearerSecurityRequirement(),
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            schema: DeleteDocumentBodySchema,
+          },
+        },
+      },
+    },
+    responses: {
+      204: { description: 'Documents deleted successfully' },
+      400: jsonResponse(apiErrorSchema, 'fileKeys must be an array of strings'),
+      401: jsonResponse(apiErrorSchema, 'Authentication required'),
+      404: jsonResponse(apiErrorSchema, 'No matching documents found'),
+      500: jsonResponse(apiErrorSchema, 'Document deletion failed'),
+    },
+  });
+}
+
 function registerChatDocumentation() {
   const chatLimitQuerySchema = z
     .object({
@@ -418,6 +525,7 @@ registerAuthDocumentation();
 registerUserDocumentation();
 registerProfileDocumentation();
 registerChatDocumentation();
+registerDocumentDocumentation();
 
 export function generateOpenAPIDocument() {
   const generator = new OpenApiGeneratorV3(registry.definitions);
@@ -445,6 +553,10 @@ export function generateOpenAPIDocument() {
       {
         name: 'chat',
         description: 'Conversation and messaging endpoints',
+      },
+      {
+        name: 'documents',
+        description: 'Document upload, listing, and deletion endpoints',
       },
     ],
     servers: [
