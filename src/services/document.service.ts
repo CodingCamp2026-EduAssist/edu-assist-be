@@ -1,9 +1,14 @@
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, inArray, and } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/db';
 import { AppError } from '../errors/app-error';
 import { documents } from '../models/documents';
-import { buildDocumentObjectKey, checksumSha256, putDocumentObject } from '../lib/object-storage';
+import {
+  buildDocumentObjectKey,
+  checksumSha256,
+  deleteDocumentObject,
+  putDocumentObject,
+} from '../lib/object-storage';
 import { env } from '../config/env';
 
 type DocumentRow = typeof documents.$inferSelect;
@@ -130,4 +135,39 @@ export async function listDocumentsForUser(userId: string, limit = 20): Promise<
     .limit(limit);
 
   return rows.map(toDocumentRecord);
+}
+
+export async function deleteDocumentsByKeys(userId: string, fileKeys: string[]): Promise<void> {
+  const rows = await db
+    .select()
+    .from(documents)
+    .where(and(eq(documents.userId, userId), inArray(documents.originalPath, fileKeys)));
+
+  if (rows.length === 0) {
+    throw new AppError(404, 'No documents found for deletion', 'DOCUMENTS_NOT_FOUND');
+  }
+
+  const documentIdsToDelete = rows.map((row) => row.id);
+  const keysToDelete = rows.map((row) => row.originalPath);
+
+  const storageResults = await Promise.allSettled(
+    keysToDelete.map((key) => deleteDocumentObject(key)),
+  );
+
+  const failedKeys = storageResults
+    .map((result, i) => (result.status === 'rejected' ? keysToDelete[i] : null))
+    .filter(Boolean);
+
+  if (failedKeys.length > 0) {
+    throw new AppError(
+      500,
+      'Failed to delete some documents from storage',
+      'DOCUMENT_DELETION_FAILED',
+      { cause: `Failed keys: ${failedKeys.join(', ')}` },
+    );
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.delete(documents).where(inArray(documents.id, documentIdsToDelete));
+  });
 }
