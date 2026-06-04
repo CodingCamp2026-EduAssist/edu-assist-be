@@ -72,14 +72,14 @@ describe('callInference', () => {
     const response = await callInference({
       userMessage: {
         content: 'how redis works?',
-        attachmentIds: ['d610c3e4-8368-4077-baea-506e7f1ecb70'],
+        attachmentPaths: ['d610c3e4-8368-4077-baea-506e7f1ecb70'],
       },
       conversationId: '123e4567-e89b-12d3-a456-426614174000',
       recentTurns: [],
       conversationSummary: '',
       locale: 'en-US',
       studentProfile: {},
-      linkedDocumentIds: [],
+      linkedDocumentPaths: [],
       stream: false,
       maxTokens: 2048,
     });
@@ -120,14 +120,14 @@ describe('callInference', () => {
     const response = await callInference({
       userMessage: {
         content: 'what is hyper parameter tuning ?',
-        attachmentIds: ['d610c3e4-8368-4077-baea-506e7f1ecb70'],
+        attachmentPaths: ['d610c3e4-8368-4077-baea-506e7f1ecb70'],
       },
       conversationId: '123e4567-e89b-12d3-a456-426614174000',
       recentTurns: [],
       conversationSummary: '',
       locale: 'en-US',
       studentProfile: {},
-      linkedDocumentIds: [],
+      linkedDocumentPaths: [],
       stream: false,
       maxTokens: 2048,
     });
@@ -148,14 +148,14 @@ describe('callInference', () => {
       callInference({
         userMessage: {
           content: 'how redis works?',
-          attachmentIds: ['d610c3e4-8368-4077-baea-506e7f1ecb70'],
+          attachmentPaths: ['d610c3e4-8368-4077-baea-506e7f1ecb70'],
         },
         conversationId: '123e4567-e89b-12d3-a456-426614174000',
         recentTurns: [],
         conversationSummary: '',
         locale: 'en-US',
         studentProfile: {},
-        linkedDocumentIds: [],
+        linkedDocumentPaths: [],
         stream: false,
         maxTokens: 2048,
       }),
@@ -172,14 +172,14 @@ describe('callInference', () => {
       callInference({
         userMessage: {
           content: 'how redis works?',
-          attachmentIds: ['d610c3e4-8368-4077-baea-506e7f1ecb70'],
+          attachmentPaths: ['d610c3e4-8368-4077-baea-506e7f1ecb70'],
         },
         conversationId: '123e4567-e89b-12d3-a456-426614174000',
         recentTurns: [],
         conversationSummary: '',
         locale: 'en-US',
         studentProfile: {},
-        linkedDocumentIds: [],
+        linkedDocumentPaths: [],
         stream: false,
         maxTokens: 2048,
       }),

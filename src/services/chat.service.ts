@@ -20,13 +20,13 @@ export type ChatActor = {
 export type CreateChatSessionInput = ChatActor & {
   title?: string;
   initialContext?: string;
-  linkedDocumentIds?: string[];
+  linkedDocumentPaths?: string[];
 };
 
 export type SendChatMessageInput = {
   sessionId: string;
   content: string;
-  attachmentIds?: string[];
+  attachmentPaths?: string[];
   locale?: string;
   stream?: boolean;
 };
@@ -112,8 +112,8 @@ function toGuestContext(
     context.initialContext = input.initialContext;
   }
 
-  if (input.linkedDocumentIds?.length) {
-    context.linkedDocumentIds = [...new Set(input.linkedDocumentIds)];
+  if (input.linkedDocumentPaths?.length) {
+    context.linkedDocumentPaths = [...new Set(input.linkedDocumentPaths)];
   }
 
   context.profileSnapshot = profileSnapshot;
@@ -308,14 +308,14 @@ export async function sendChatMessage(
   const inferencePayload: InferenceRequest = {
     userMessage: {
       content: input.content,
-      attachmentIds: input.attachmentIds,
+      attachmentPaths: input.attachmentPaths,
     },
     conversationId: session.id,
     recentTurns: recentMessages.map(toTurn),
     conversationSummary: session.rollingSummary ?? session.guestContext?.initialContext ?? '',
     locale: input.locale,
     studentProfile: studentProfile ?? undefined,
-    linkedDocumentIds: session.guestContext?.linkedDocumentIds ?? [],
+    linkedDocumentPaths: session.guestContext?.linkedDocumentPaths ?? [],
     stream: input.stream ?? false,
     maxTokens: DEFAULT_INFERENCE_MAX_TOKENS,
   };
@@ -406,14 +406,14 @@ export async function* streamChatMessage(
   const inferencePayload: InferenceRequest = {
     userMessage: {
       content: input.content,
-      attachmentIds: input.attachmentIds,
+      attachmentPaths: input.attachmentPaths,
     },
     conversationId: session.id,
     recentTurns: recentMessages.map(toTurn),
     conversationSummary: session.rollingSummary ?? session.guestContext?.initialContext ?? '',
     locale: input.locale,
     studentProfile: studentProfile ?? undefined,
-    linkedDocumentIds: session.guestContext?.linkedDocumentIds ?? [],
+    linkedDocumentPaths: session.guestContext?.linkedDocumentPaths ?? [],
     stream: true,
     maxTokens: DEFAULT_INFERENCE_MAX_TOKENS,
   };

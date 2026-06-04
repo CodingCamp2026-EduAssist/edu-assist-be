@@ -10,11 +10,7 @@ export const InferenceRequestDto = z
     userMessage: z
       .object({
         content: z.string().trim().min(1).max(8000),
-        attachmentIds: z
-          .array(z.uuid())
-          .max(20)
-          .optional()
-          .transform((value) => (value ? [...new Set(value)] : undefined)),
+        attachmentPaths: z.array(z.string().trim()).max(20).optional(),
       })
       .strict(),
     conversationId: z.uuid(),
@@ -22,11 +18,7 @@ export const InferenceRequestDto = z
     conversationSummary: z.string().trim().max(8000).optional(),
     locale: z.string().trim().regex(localePattern).optional(),
     studentProfile: StudentProfileSchema.partial().strict().optional(),
-    linkedDocumentIds: z
-      .array(z.uuid())
-      .max(20)
-      .optional()
-      .transform((value) => (value ? [...new Set(value)] : undefined)),
+    linkedDocumentPaths: z.array(z.string().trim()).max(20).optional(),
     stream: z.boolean().default(false),
     maxTokens: z.coerce.number().int().positive().max(8192).optional(),
   })
