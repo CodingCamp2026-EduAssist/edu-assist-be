@@ -46,7 +46,7 @@ export async function createSession(req: Request, res: Response): Promise<void> 
     userId,
     title: payload.title,
     initialContext: payload.initialContext,
-    linkedDocumentIds: payload.linkedDocumentIds,
+    linkedDocumentPaths: payload.linkedDocumentPaths,
   });
 
   res.status(201).json({
@@ -118,7 +118,7 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
   const result = await sendChatMessage(actor, {
     sessionId: params.sessionId,
     content: body.content,
-    attachmentIds: body.attachmentIds,
+    attachmentPaths: body.attachmentPaths,
     locale: body.locale,
     stream: body.stream,
   });
@@ -140,7 +140,7 @@ async function streamChatMessageController(
   const chunks = streamChatMessage(actor, {
     sessionId: params.sessionId,
     content: body.content,
-    attachmentIds: body.attachmentIds,
+    attachmentPaths: body.attachmentPaths,
     locale: body.locale,
     stream: true,
   });

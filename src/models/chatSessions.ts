@@ -8,7 +8,7 @@ export const chatMessageRoleEnum = pgEnum('chat_message_role', ['user', 'assista
 
 export type GuestContext = {
   initialContext?: string;
-  linkedDocumentIds?: string[];
+  linkedDocumentPaths?: string[];
   locale?: string;
   profileSnapshot?: StudentProfileInput;
   temporaryProfile?: Partial<StudentProfileInput>;

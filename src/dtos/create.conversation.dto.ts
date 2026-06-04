@@ -2,11 +2,7 @@ import { z } from 'zod';
 
 export const CreateConversationRequestDto = z
   .object({
-    linkedDocumentIds: z
-      .array(z.uuid())
-      .max(20)
-      .optional()
-      .transform((value) => (value ? [...new Set(value)] : undefined)),
+    linkedDocumentPaths: z.array(z.string().trim()).max(20).optional(),
     initialContext: z.string().trim().min(1).max(4000).optional(),
     title: z.string().trim().min(1).max(120).optional(),
   })
