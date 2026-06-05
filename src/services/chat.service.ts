@@ -495,6 +495,9 @@ export async function* streamChatMessage(
     maxTokens: DEFAULT_INFERENCE_MAX_TOKENS,
   };
 
+  console.log('Student profile snapshot for inference:', studentProfile);
+  console.log('Total tokens used in recent messages:', totalTokensUsed);
+
   await db.insert(chatMessages).values({
     chatSessionId: session.id,
     role: 'user',
