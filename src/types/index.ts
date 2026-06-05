@@ -39,7 +39,8 @@ export type StreamEvent =
         course_recommended?: CourseRecommendation[];
         citations?: Citation[];
       };
-    };
+    }
+  | { event: 'done'; data?: object };
 
 export const Turn = z
   .object({

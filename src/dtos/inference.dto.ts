@@ -20,7 +20,8 @@ export const InferenceRequestDto = z
     studentProfile: StudentProfileSchema.partial().strict().optional(),
     linkedDocumentPaths: z.array(z.string().trim()).max(20).optional(),
     stream: z.boolean().default(false),
-    maxTokens: z.coerce.number().int().positive().max(8192).optional(),
+    totalTokens: z.number().optional(),
+    maxTokens: z.number().optional(),
   })
   .strict();
 
@@ -61,6 +62,15 @@ export const MetadataStreamChunkDto = z.object({
   citations: z.array(z.unknown()).optional(),
   course_recommended: z.array(CourseRecommendationDto).optional(),
 });
+
+export const TitleInferenceRequestDto = z
+  .object({
+    conversationId: z.uuid(),
+    initialContext: z.string().trim().max(8000).optional(),
+  })
+  .strict();
+
+export type TitleInferenceRequestDto = z.infer<typeof TitleInferenceRequestDto>;
 
 export type InferenceRequest = z.infer<typeof InferenceRequestDto>;
 export type InferenceResponse = z.infer<typeof InferenceResponseDto>;
