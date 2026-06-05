@@ -7,6 +7,7 @@ import {
   InferenceResponseDto,
   MetadataStreamChunkDto,
   ThinkingStreamChunkDto,
+  TitleInferenceRequestDto,
 } from '../dtos/inference.dto';
 import { env } from '../config/env';
 import { Citation, StreamEvent, TokenUsage } from '../types';
@@ -23,7 +24,8 @@ export type InferenceStreamChunk =
       tokenUsage?: TokenUsage;
       courseRecommended?: CourseRecommendation[];
     }
-  | { type: 'thinking'; content: string };
+  | { type: 'thinking'; content: string }
+  | { type: 'done' };
 
 const InferenceUpstreamContentDto = z.union([
   z.string().min(1).max(8000),
@@ -55,10 +57,44 @@ function normalizeInferenceContent(content: z.infer<typeof InferenceUpstreamCont
   return typeof content === 'string' ? content : content.text;
 }
 
+export async function generateTitleInference(payload: TitleInferenceRequestDto): Promise<string> {
+  const requestResult = TitleInferenceRequestDto.safeParse(payload);
+
+  if (!requestResult.success) {
+    throw new AppError(
+      500,
+      'Invalid inference request payload',
+      'INFERENCE_REQUEST_INVALID',
+      requestResult.error.issues,
+    );
+  }
+
+  try {
+    const response = await fetch(`${env.inferenceApiUrl}/title`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(requestResult.data),
+    });
+    const result = await response.json();
+    return result.title;
+  } catch (error) {
+    console.error('Failed to generate title inference:', error);
+    throw new AppError(503, 'Inference service unavailable', 'INFERENCE_UNAVAILABLE');
+  }
+}
+
 export async function* streamInference(
   payload: InferenceRequest,
 ): AsyncGenerator<InferenceStreamChunk, void, unknown> {
+  console.log('Starting inference stream with payload:', payload);
   const requestResult = InferenceRequestDto.safeParse(payload);
+  console.log(
+    'Total tokens requested for inference:',
+    requestResult.success ? requestResult.data.totalTokens : 'N/A',
+  );
 
   if (!requestResult.success) {
     throw new AppError(
@@ -73,7 +109,7 @@ export async function* streamInference(
   const timeoutId = setTimeout(() => controller.abort(), env.inferenceRequestTimeoutMs);
 
   try {
-    const response = await fetch(env.inferenceApiUrl, {
+    const response = await fetch(`${env.inferenceApiUrl}/inference/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -100,70 +136,101 @@ export async function* streamInference(
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
 
-      if (done) break;
+        console.log('Received chunk from inference stream:', { done, valueLength: value?.length });
 
-      clearTimeout(timeoutId);
-      buffer += decoder.decode(value, { stream: true });
+        if (done) {
+          console.log('Inference stream completed by server');
+          yield { type: 'done' };
+          return;
+        }
 
-      const parts = buffer.split('\n\n');
+        clearTimeout(timeoutId);
+        buffer += decoder.decode(value, { stream: true });
 
-      buffer = parts.pop() || '';
+        const parts = buffer.split('\n\n');
 
-      for (const part of parts) {
-        const eventStr = part.split('\n')[0]?.replace('event: ', '').trim();
-        const eventType = eventStr as StreamEvent['event'];
+        buffer = parts.pop() || '';
 
-        const dataLine = part.split('\n').find((line) => line.startsWith('data: '));
+        for (const part of parts) {
+          const lines = part.split('\n');
 
-        if (dataLine) {
-          const jsonString = dataLine.replace('data: ', '').trim();
+          const sseEventLine = lines.find((l) => l.startsWith('event: '));
+          const sseEventType = sseEventLine?.replace('event: ', '').trim();
 
-          try {
-            const parsedData = JSON.parse(jsonString) as StreamEvent;
+          const dataLine = part.split('\n').find((line) => line.startsWith('data: '));
 
-            const eventData =
-              parsedData.event === 'thinking-stream' ||
-              parsedData.event === 'chat-stream' ||
-              parsedData.event === 'metadata-stream'
-                ? parsedData.data
-                : parsedData;
+          if (dataLine) {
+            const jsonString = dataLine.replace('data: ', '').trim();
 
-            if (eventType === 'chat-stream') {
-              const result = ChatStreamChunkDto.safeParse(eventData);
-              if (result.success) {
-                yield { type: 'text', content: result.data.text };
-              } else {
-                console.warn('chat-stream parse failed:', result.error.flatten());
+            try {
+              const parsedData = JSON.parse(jsonString) as StreamEvent;
+
+              const eventType = sseEventType ?? parsedData.event;
+
+              const eventData =
+                parsedData.event === 'thinking-stream' ||
+                parsedData.event === 'chat-stream' ||
+                parsedData.event === 'metadata-stream'
+                  ? parsedData.data
+                  : parsedData;
+
+              if (eventType === 'chat-stream') {
+                const result = ChatStreamChunkDto.safeParse(eventData);
+                if (result.success) {
+                  yield { type: 'text', content: result.data.text };
+                } else {
+                  console.warn('chat-stream parse failed:', result.error.flatten());
+                }
+              } else if (eventType === 'thinking-stream') {
+                const result = ThinkingStreamChunkDto.safeParse(eventData);
+                if (result.success && (result.data.text || result.data.label)) {
+                  yield { type: 'thinking', content: result.data.text ?? '' };
+                } else {
+                  console.warn('thinking-stream parse failed:', result.error?.flatten());
+                }
+              } else if (eventType === 'metadata-stream') {
+                const result = MetadataStreamChunkDto.safeParse(eventData);
+                if (result.success) {
+                  yield {
+                    type: 'metadata',
+                    summary: result.data.summary,
+                    tokenUsage: result.data.tokenUsed,
+                    courseRecommended: result.data.course_recommended,
+                  };
+                  console.log('Hit metadata stream chunk with data:', result.data);
+                } else {
+                  console.warn('metadata-stream parse failed:', result.error.flatten());
+                }
+              } else if (eventType === 'done') {
+                console.log('Received explicit done event from server');
+                yield { type: 'done' };
+                return;
               }
-            } else if (eventType === 'thinking-stream') {
-              const result = ThinkingStreamChunkDto.safeParse(eventData);
-              if (result.success && (result.data.text || result.data.label)) {
-                yield { type: 'thinking', content: result.data.text ?? '' };
-              } else {
-                console.warn('thinking-stream parse failed:', result.error?.flatten());
-              }
-            } else if (eventType === 'metadata-stream') {
-              const result = MetadataStreamChunkDto.safeParse(eventData);
-              if (result.success) {
-                yield {
-                  type: 'metadata',
-                  summary: result.data.summary,
-                  // citations: result.data.citations,
-                  tokenUsage: result.data.tokenUsed,
-                  courseRecommended: result.data.course_recommended,
-                };
-              } else {
-                console.warn('metadata-stream parse failed:', result.error.flatten());
-              }
+            } catch (error) {
+              console.warn('Failed to parse SSE data chunk:', error);
             }
-          } catch (error) {
-            console.warn('Failed to parse SSE data chunk:', error);
           }
         }
+
+        if (buffer.includes('event: done')) {
+          break;
+        }
       }
+    } finally {
+      console.log('Cleaning up inference stream resources');
+      try {
+        reader.releaseLock();
+      } catch {
+        // Already released, ignore
+      }
+      if (!controller.signal.aborted) {
+        controller.abort();
+      }
+      console.log('Reader lock released and controller aborted');
     }
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -194,7 +261,7 @@ export async function callInference(payload: InferenceRequest): Promise<Inferenc
   const timeoutId = setTimeout(() => controller.abort(), env.inferenceRequestTimeoutMs);
 
   try {
-    const response = await fetch(env.inferenceApiUrl, {
+    const response = await fetch(`${env.inferenceApiUrl}/inference/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

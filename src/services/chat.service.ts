@@ -1,6 +1,10 @@
 import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/db';
-import { streamInference, type InferenceRequest } from './inference.service';
+import {
+  generateTitleInference,
+  streamInference,
+  type InferenceRequest,
+} from './inference.service';
 import type { Citation, ClientCourse, ClientMessage, TokenUsage, Turn } from '../types';
 import { ChatSession, chatSessions, GuestContext } from '../models/chatSessions';
 import { ChatMessage, chatMessages } from '../models/chatMessages';
@@ -75,6 +79,26 @@ export type ChatMessageChunk =
 function deriveTitle(content: string): string {
   const normalized = content.replace(/\s+/g, ' ').trim();
   return normalized.slice(0, 80);
+}
+
+function countAssistantMessages(messages: ChatMessage[]): number {
+  return messages.filter((m) => m.role === 'assistant').length;
+}
+
+async function generateTitleForSession(
+  sessionId: string,
+  initialContext: string,
+): Promise<string | null> {
+  try {
+    const title = await generateTitleInference({
+      conversationId: sessionId,
+      initialContext,
+    });
+    return title;
+  } catch (error) {
+    console.error('Failed to generate title inference for session:', sessionId, error);
+    return null;
+  }
 }
 
 function toClientMessage(message: ChatMessage, messageCourses?: ClientCourse[]): ClientMessage {
@@ -362,16 +386,37 @@ export async function sendChatMessage(
     })
     .returning();
 
+  const assistantMessageCount = countAssistantMessages(recentMessages) + 1;
   const title = session.title ?? deriveTitle(input.content);
 
-  await db
-    .update(chatSessions)
-    .set({
-      title,
-      lastMessageAt: now,
-      updatedAt: now,
-    })
-    .where(eq(chatSessions.id, session.id));
+  if (!session.title && assistantMessageCount >= 3) {
+    console.log('Generating title for session:', session.id);
+    const initialContext = session.guestContext?.initialContext ?? deriveTitle(input.content);
+    generateTitleForSession(session.id, initialContext)
+      .then(async (generatedTitle) => {
+        if (generatedTitle) {
+          await db
+            .update(chatSessions)
+            .set({
+              title: generatedTitle,
+              updatedAt: new Date(),
+            })
+            .where(eq(chatSessions.id, session.id));
+        }
+      })
+      .catch((err) => {
+        console.error('Async title update failed:', err);
+      });
+  } else {
+    await db
+      .update(chatSessions)
+      .set({
+        title,
+        lastMessageAt: now,
+        updatedAt: now,
+      })
+      .where(eq(chatSessions.id, session.id));
+  }
 
   return {
     userMessage: toClientMessage(userMessage),
@@ -424,6 +469,14 @@ export async function* streamChatMessage(
   const now = new Date();
 
   const recentMessages = await getRecentMessages(session.id, 20);
+
+  let totalTokensUsed = 0;
+  for (const msg of recentMessages) {
+    if (msg.promptTokens && msg.completionTokens) {
+      totalTokensUsed += msg.promptTokens + msg.completionTokens;
+    }
+  }
+
   const studentProfile =
     session.guestContext?.profileSnapshot ?? session.guestContext?.temporaryProfile;
   const inferencePayload: InferenceRequest = {
@@ -438,6 +491,7 @@ export async function* streamChatMessage(
     studentProfile: studentProfile ?? undefined,
     linkedDocumentPaths: session.guestContext?.linkedDocumentPaths ?? [],
     stream: true,
+    totalTokens: totalTokensUsed,
     maxTokens: DEFAULT_INFERENCE_MAX_TOKENS,
   };
 
@@ -506,6 +560,8 @@ export async function* streamChatMessage(
     })
     .returning();
 
+  const assistantMessageCount = countAssistantMessages(recentMessages) + 1;
+  console.log('Assistant message count for session:', assistantMessageCount);
   const title = session.title ?? deriveTitle(input.content);
 
   const savedCourses = await saveCourseRecommendations(
@@ -517,14 +573,34 @@ export async function* streamChatMessage(
     console.log('No new courses were saved based on the recommendations.');
   }
 
-  await db
-    .update(chatSessions)
-    .set({
-      title,
-      lastMessageAt: now,
-      updatedAt: now,
-    })
-    .where(eq(chatSessions.id, session.id));
+  if (assistantMessageCount >= 3) {
+    console.log('Generating title for session:', session.id);
+    const initialContext = session.guestContext?.initialContext ?? deriveTitle(input.content);
+    generateTitleForSession(session.id, initialContext)
+      .then(async (generatedTitle) => {
+        if (generatedTitle) {
+          await db
+            .update(chatSessions)
+            .set({
+              title: generatedTitle,
+              updatedAt: new Date(),
+            })
+            .where(eq(chatSessions.id, session.id));
+        }
+      })
+      .catch((err) => {
+        console.error('Async title update failed:', err);
+      });
+  } else {
+    await db
+      .update(chatSessions)
+      .set({
+        title,
+        lastMessageAt: now,
+        updatedAt: now,
+      })
+      .where(eq(chatSessions.id, session.id));
+  }
 
   yield {
     type: 'metadata',

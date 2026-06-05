@@ -116,6 +116,8 @@ export async function sendMessage(req: Request, res: Response): Promise<void> {
     return await streamChatMessageController(req, res, actor, body, params);
   }
 
+  console.log('Received send message request:', { actor, body, params });
+
   const result = await sendChatMessage(actor, {
     sessionId: params.sessionId,
     content: body.content,
@@ -155,7 +157,12 @@ async function streamChatMessageController(
   try {
     for await (const chunk of chunks) {
       console.log('Received chat message chunk:', chunk);
-      if (chunk.type === 'text') {
+      if (chunk.type === 'done') {
+        res.write(`data: ${JSON.stringify({ type: 'done' })}
+
+`);
+        res.end();
+      } else if (chunk.type === 'text') {
         res.write(
           `data: ${JSON.stringify({ type: 'text', content: chunk.content })}
 
@@ -183,11 +190,6 @@ async function streamChatMessageController(
 `,
           );
         }
-      } else if (chunk.type === 'done') {
-        res.write(`data: ${JSON.stringify({ type: 'done' })}
-
-`);
-        res.end();
       } else if (chunk.type === 'thinking') {
         res.write(
           `data: ${JSON.stringify({ type: 'thinking', content: chunk.content })}
@@ -196,6 +198,8 @@ async function streamChatMessageController(
         );
       }
     }
+    // Close SSE stream when generator exhausts
+    res.end();
   } catch (error) {
     console.error('Streaming error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown streaming error';
